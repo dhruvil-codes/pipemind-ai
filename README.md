@@ -15,6 +15,7 @@ mishandled nulls, incorrect aggregations, broken joins. This environment formali
 into a structured, gradeable RL training problem.
 
 **It is immediately useful for:**
+
 - Evaluating LLMs on practical data engineering reasoning
 - Training agents to understand pandas semantics
 - Benchmarking code-generation models on correctness, not just syntax
@@ -59,35 +60,37 @@ def fix_pipeline(df: pd.DataFrame) -> pd.DataFrame:
 """)
 ```
 
-| Field | Type   | Description |
-|-------|--------|-------------|
+| Field  | Type  | Description                                                          |
+| ------ | ----- | -------------------------------------------------------------------- |
 | `code` | `str` | Python code defining `fix_pipeline(df)`. Must return `pd.DataFrame`. |
 
 ---
 
 ## 👁 Observation Space
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `task_id` | `str` | `"easy"`, `"medium"`, or `"hard"` |
-| `task_description` | `str` | Full natural language description of what to fix |
-| `broken_code` | `str` | The buggy pipeline code to fix |
-| `input_data` | `str` | JSON-serialized input DataFrame |
-| `expected_output_sample` | `str` | First 3 rows of expected output (JSON) |
-| `last_action_result` | `str` | Execution result or error from last step |
-| `last_reward` | `float` | Reward from last step |
-| `step_count` | `int` | Steps taken so far |
-| `done` | `bool` | Episode complete flag |
-| `score_breakdown` | `dict` | Per-dimension scores: `schema_match`, `row_count_match`, `dtype_match`, `value_match` |
+| Field                    | Type    | Description                                                                           |
+| ------------------------ | ------- | ------------------------------------------------------------------------------------- |
+| `task_id`                | `str`   | `"easy"`, `"medium"`, or `"hard"`                                                     |
+| `task_description`       | `str`   | Full natural language description of what to fix                                      |
+| `broken_code`            | `str`   | The buggy pipeline code to fix                                                        |
+| `input_data`             | `str`   | JSON-serialized input DataFrame                                                       |
+| `expected_output_sample` | `str`   | First 3 rows of expected output (JSON)                                                |
+| `last_action_result`     | `str`   | Execution result or error from last step                                              |
+| `last_reward`            | `float` | Reward from last step                                                                 |
+| `step_count`             | `int`   | Steps taken so far                                                                    |
+| `done`                   | `bool`  | Episode complete flag                                                                 |
+| `score_breakdown`        | `dict`  | Per-dimension scores: `schema_match`, `row_count_match`, `dtype_match`, `value_match` |
 
 ---
 
 ## 🏆 Tasks
 
 ### Task 1 — Easy: Fix Dtype Bugs
+
 **Difficulty:** Easy | **Max steps:** 10
 
 A sales order dataset where dtypes are all wrong:
+
 - `quantity` cast to float instead of int
 - `unit_price` cast to int (loses decimals)
 - `order_date` not parsed to datetime
@@ -101,9 +104,11 @@ The agent must fix all 5 bugs and compute the correct `total_price`.
 ---
 
 ### Task 2 — Medium: Fix Null Handling + Aggregation
+
 **Difficulty:** Medium | **Max steps:** 15
 
 A customer transactions dataset with:
+
 - NaN amounts filled with mean instead of **median**
 - NaN categories **dropped** instead of filled with `"unknown"`
 - `-1` sentinel in `is_refund` not replaced before filling
@@ -117,9 +122,11 @@ The agent must fix null handling and produce correct customer×month aggregation
 ---
 
 ### Task 3 — Hard: Fix Multi-Table Join + Reshape
+
 **Difficulty:** Hard | **Max steps:** 20
 
 Two DataFrames (`orders` + `products`) with:
+
 - Quantities and prices not cast from string
 - INNER join used instead of **LEFT join** (drops unmatched orders)
 - `month` column never extracted
@@ -136,15 +143,16 @@ The agent receives a `dict` input and must produce a correctly shaped, joined, g
 
 ## 🎁 Reward Function
 
-| Signal | Value |
-|--------|-------|
-| Base score | `0.0 – 1.0` (weighted grader output) |
-| Improvement bonus | `+0.3 × (new_score - previous_best)` |
-| Step penalty | `−0.01` per step |
-| Solve bonus | `+0.50` when score ≥ 0.95 |
-| Execution error penalty | `−0.05` |
+| Signal                  | Value                                |
+| ----------------------- | ------------------------------------ |
+| Base score              | `0.0 – 1.0` (weighted grader output) |
+| Improvement bonus       | `+0.3 × (new_score - previous_best)` |
+| Step penalty            | `−0.01` per step                     |
+| Solve bonus             | `+0.50` when score ≥ 0.95            |
+| Execution error penalty | `−0.05`                              |
 
 **Score breakdown weights:**
+
 - Schema match (correct columns): **25%**
 - Row count match: **15%**
 - Dtype match (numeric columns): **20%**
@@ -197,11 +205,11 @@ openenv validate
 
 Tested with `gpt-4o-mini`:
 
-| Task   | Score |
-|--------|-------|
-| Easy   | 0.87  |
-| Medium | 0.63  |
-| Hard   | 0.34  |
+| Task    | Score    |
+| ------- | -------- |
+| Easy    | 0.87     |
+| Medium  | 0.63     |
+| Hard    | 0.34     |
 | **Avg** | **0.61** |
 
 ---
