@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "pipeline-debugger-env"
+version = "1.0.0"
+description = "OpenEnv environment for data pipeline debugging"
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core>=0.2.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.0.0",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "requests>=2.25.0",
+    "openai>=1.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pipeline_debugger_env*"]

@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Pipeline Fixer — OpenEnv × Meta PyTorch</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@500;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg: #07090f;
+  --surface: #0d1117;
+  --card: #111820;
+  --border: #1c2530;
+  --border2: #283545;
+  --text: #c8d4e0;
+  --muted: #4a5a70;
+  --accent: #00d4ff;
+  --green: #00e676;
+  --yellow: #ffd740;
+  --red: #ff4757;
+  --purple: #7c5cfc;
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Syne', sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px}
+
+/* ── HEADER ── */
+header{
+  height:52px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 32px;border-bottom:1px solid var(--border);
+  background:rgba(7,9,15,.9);backdrop-filter:blur(12px);
+  position:relative;z-index:100;
+}
+.logo{font-family:var(--sans);font-weight:800;font-size:15px;color:#fff;display:flex;align-items:center;gap:10px}
+.logo-pip{color:var(--accent)}
+.hf-badge{
+  font-size:10px;letter-spacing:1.5px;text-transform:uppercase;
+  padding:3px 10px;border-radius:20px;
+  background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.2);
+  color:var(--accent);
+}
+
+/* ── SCREENS ── */
+.screen{position:fixed;top:52px;left:0;right:0;bottom:0;display:none;overflow:hidden;background:var(--bg);z-index:1}
+.screen.active{display:flex}
+
+/* ══════════════════════════════════════════
+   SCREEN 1 — UPLOAD
+══════════════════════════════════════════ */
+#screen-upload{
+  align-items:center;justify-content:center;flex-direction:column;gap:32px;
+  background:radial-gradient(ellipse at 50% 0%,rgba(0,212,255,.06) 0%,transparent 60%);
+}
+
+.upload-hero{text-align:center}
+.upload-hero h1{
+  font-family:var(--sans);font-size:36px;font-weight:800;
+  color:#fff;line-height:1.15;margin-bottom:12px;
+}
+.upload-hero h1 span{color:var(--accent)}
+.upload-hero p{color:var(--muted);font-size:13px;line-height:1.7;max-width:480px;margin:0 auto}
+
+.upload-card{
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  padding:32px;width:520px;display:flex;flex-direction:column;gap:20px;
+}
+
+/* Drop zone */
+.dropzone{
+  border:2px dashed var(--border2);border-radius:8px;
+  padding:36px 20px;text-align:center;cursor:pointer;
+  transition:all .2s;position:relative;
+}
+.dropzone:hover,.dropzone.drag{border-color:var(--accent);background:rgba(0,212,255,.04)}
+.dropzone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.dropzone-icon{font-size:32px;margin-bottom:10px}
+.dropzone-text{color:var(--muted);font-size:12px;line-height:1.6}
+.dropzone-text strong{color:var(--text);display:block;margin-bottom:4px;font-size:13px}
+.file-types{
+  display:flex;gap:8px;justify-content:center;margin-top:10px;
+}
+.file-type-pill{
+  font-size:10px;padding:3px 8px;border-radius:4px;
+  background:rgba(255,255,255,.04);border:1px solid var(--border2);color:var(--muted);
+}
+#file-chosen{
+  margin-top:8px;font-size:11px;color:var(--green);display:none;
+}
+
+/* Hint input */
+.field label{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
+.field input,.field textarea{
+  width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;
+  padding:10px 12px;color:var(--text);font-family:var(--mono);font-size:12px;
+  outline:none;transition:border .2s;
+}
+.field input:focus,.field textarea:focus{border-color:var(--accent)}
+.field input::placeholder,.field textarea::placeholder{color:var(--muted)}
+
+/* API key */
+.api-row{display:flex;gap:10px}
+.api-row .field{flex:1}
+.api-toggle{
+  font-size:10px;color:var(--muted);background:none;border:none;
+  cursor:pointer;padding:0;margin-top:18px;text-decoration:underline;
+  font-family:var(--mono);white-space:nowrap;
+}
+.api-toggle:hover{color:var(--text)}
+#api-key-field{display:none}
+
+.btn-primary{
+  font-family:var(--sans);font-size:14px;font-weight:700;
+  padding:13px;border-radius:8px;border:none;cursor:pointer;
+  background:var(--accent);color:var(--bg);width:100%;
+  transition:all .2s;letter-spacing:-.2px;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.btn-primary:hover{background:#33dcff;transform:translateY(-1px);box-shadow:0 6px 24px rgba(0,212,255,.3)}
+.btn-primary:disabled{background:var(--border2);color:var(--muted);cursor:not-allowed;transform:none;box-shadow:none}
+
+/* Demo tasks */
+.demo-label{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);text-align:center}
+.demo-tasks{display:flex;gap:10px}
+.demo-task{
+  flex:1;padding:12px;border-radius:6px;border:1px solid var(--border);
+  cursor:pointer;transition:all .2s;text-align:center;
+}
+.demo-task:hover{border-color:var(--border2);background:rgba(255,255,255,.02)}
+.demo-task .dt-emoji{font-size:20px;margin-bottom:4px}
+.demo-task .dt-name{font-size:11px;color:var(--text);font-weight:500}
+.demo-task .dt-diff{font-size:9px;margin-top:3px}
+/* Notice box */
+.notice{
+  font-size:11px;padding:10px 14px;border-radius:6px;line-height:1.6;
+  background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.15);color:var(--muted);
+}
+.notice strong{color:var(--accent)}
+
+/* Error box */
+.err-box{
+  font-size:11px;padding:10px 14px;border-radius:6px;line-height:1.6;
+  background:rgba(255,71,87,.08);border:1px solid rgba(255,71,87,.2);color:var(--red);
+  display:none;
+}
+
+.diff-easy{color:var(--green)}.diff-medium{color:var(--yellow)}.diff-hard{color:var(--red)}
+
+/* ══════════════════════════════════════════
+   SCREEN 2 — PROCESSING
+══════════════════════════════════════════ */
+#screen-processing{
+  align-items:center;justify-content:center;flex-direction:column;gap:32px;
+}
+
+.proc-card{
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  padding:36px;width:600px;
+}
+.proc-title{
+  font-family:var(--sans);font-size:20px;font-weight:700;color:#fff;
+  margin-bottom:6px;
+}
+.proc-subtitle{font-size:12px;color:var(--muted);margin-bottom:28px}
+
+/* Steps */
+.steps-list{display:flex;flex-direction:column;gap:0}
+.step-item{
+  display:flex;align-items:flex-start;gap:14px;
+  padding:14px 0;border-bottom:1px solid var(--border);
+  position:relative;
+}
+.step-item:last-child{border-bottom:none}
+.step-icon{
+  width:28px;height:28px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;flex-shrink:0;margin-top:2px;
+  background:var(--border);color:var(--muted);
+  transition:all .4s;
+}
+.step-icon.done{background:rgba(0,230,118,.15);color:var(--green)}
+.step-icon.active{background:rgba(0,212,255,.15);color:var(--accent);animation:breathe 1.5s infinite}
+@keyframes breathe{0%,100%{box-shadow:0 0 0 0 rgba(0,212,255,.3)}50%{box-shadow:0 0 0 6px rgba(0,212,255,0)}}
+.step-body{flex:1}
+.step-name{font-size:12px;color:var(--text);font-weight:500;margin-bottom:3px}
+.step-detail{font-size:11px;color:var(--muted);line-height:1.5}
+
+/* Score progress */
+.score-progress{margin-top:24px}
+.sp-header{display:flex;justify-content:space-between;margin-bottom:8px}
+.sp-label{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.sp-val{font-family:var(--sans);font-size:20px;font-weight:800;color:var(--accent);transition:all .3s}
+.progress-bar{height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.progress-fill{
+  height:100%;border-radius:3px;width:0%;
+  background:linear-gradient(90deg,var(--purple),var(--accent));
+  transition:width .6s cubic-bezier(.4,0,.2,1);
+}
+
+.iteration-log{
+  margin-top:16px;background:var(--surface);border-radius:6px;
+  padding:12px;max-height:120px;overflow-y:auto;
+}
+.iter-line{font-size:11px;color:var(--muted);line-height:1.8;display:flex;gap:8px}
+.iter-step{color:var(--border2);width:44px;flex-shrink:0}
+.iter-score{width:56px;flex-shrink:0}
+
+/* ══════════════════════════════════════════
+   SCREEN 3 — RESULT
+══════════════════════════════════════════ */
+#screen-result {
+  grid-template-columns:340px 1fr;
+  height:100%;
+}
+#screen-result.active { display:grid; }
+
+.result-left{
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+  padding:24px;gap:20px;
+}
+
+.result-score-big{
+  text-align:center;padding:24px 0;
+  border-bottom:1px solid var(--border);
+}
+.rsb-num{
+  font-family:var(--sans);font-size:64px;font-weight:800;
+  line-height:1;margin-bottom:6px;
+}
+.rsb-num.perfect{color:var(--green);text-shadow:0 0 40px rgba(0,230,118,.3)}
+.rsb-num.good{color:var(--accent)}
+.rsb-num.partial{color:var(--yellow)}
+.rsb-label{font-size:11px;color:var(--muted)}
+.rsb-badge{
+  display:inline-block;margin-top:10px;
+  padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;
+}
+.badge-solved{background:rgba(0,230,118,.12);color:var(--green);border:1px solid rgba(0,230,118,.2)}
+.badge-partial{background:rgba(255,215,64,.10);color:var(--yellow);border:1px solid rgba(255,215,64,.2)}
+
+.result-dims{display:flex;flex-direction:column;gap:10px}
+.rdim{display:flex;flex-direction:column;gap:4px}
+.rdim-top{display:flex;justify-content:space-between}
+.rdim-name{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.rdim-val{font-size:11px;color:var(--text)}
+.rdim-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.rdim-fill{height:100%;border-radius:2px;transition:width .6s .2s}
+.d-schema .rdim-fill{background:#61afef}
+.d-rows   .rdim-fill{background:#c678dd}
+.d-dtypes .rdim-fill{background:var(--yellow)}
+.d-values .rdim-fill{background:var(--green)}
+
+.fixes-list{flex:1;overflow-y:auto}
+.fix-item{
+  display:flex;align-items:flex-start;gap:8px;
+  padding:8px 0;border-bottom:1px solid rgba(255,255,255,.03);
+  font-size:11px;line-height:1.5;
+}
+.fix-check{color:var(--green);flex-shrink:0;margin-top:1px}
+.fix-text{color:var(--text)}
+
+.result-actions{display:flex;flex-direction:column;gap:10px}
+.btn-download{
+  font-family:var(--sans);font-size:13px;font-weight:700;
+  padding:12px;border-radius:8px;border:none;cursor:pointer;
+  background:var(--green);color:var(--bg);
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:all .2s;
+}
+.btn-download:hover{background:#33ff99;transform:translateY(-1px)}
+.btn-download:disabled{background:var(--border2);color:var(--muted);cursor:not-allowed;transform:none}
+.btn-again{
+  font-family:var(--mono);font-size:12px;
+  padding:10px;border-radius:8px;
+  border:1px solid var(--border2);background:none;color:var(--muted);
+  cursor:pointer;transition:all .2s;
+}
+.btn-again:hover{border-color:var(--text);color:var(--text)}
+
+.result-right{
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.result-tabs{
+  display:flex;border-bottom:1px solid var(--border);padding:0 24px;
+}
+.rtab{
+  padding:12px 14px;font-size:11px;color:var(--muted);cursor:pointer;
+  border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .2s;
+}
+.rtab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.rtab:hover:not(.active){color:var(--text)}
+.rtab-content{flex:1;overflow:hidden}
+.rtab-pane{display:none;height:100%;overflow-y:auto;padding:20px 24px}
+.rtab-pane.active{display:block}
+
+/* Data table */
+.data-table{border-collapse:collapse;width:100%;font-size:11px}
+.data-table th{
+  text-align:left;padding:6px 10px;
+  border-bottom:1px solid var(--border);
+  color:var(--accent);letter-spacing:.5px;font-size:10px;
+  position:sticky;top:0;background:var(--surface);
+}
+.data-table td{
+  padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.03);
+  color:var(--text);white-space:nowrap;
+}
+.data-table tr:hover td{background:rgba(255,255,255,.02)}
+
+/* Code view */
+.code-block{
+  background:var(--surface);border:1px solid var(--border);border-radius:6px;
+  padding:16px;font-size:12px;line-height:1.7;
+  white-space:pre-wrap;word-break:break-word;color:#98c379;
+  overflow-y:auto;max-height:calc(100vh - 160px);
+}
+
+/* Steps timeline */
+.steps-timeline{display:flex;flex-direction:column;gap:12px}
+.st-item{
+  display:flex;gap:12px;align-items:flex-start;
+  background:var(--surface);border-radius:6px;padding:12px;
+}
+.st-step{
+  font-size:10px;letter-spacing:1px;color:var(--muted);
+  width:48px;flex-shrink:0;padding-top:2px;
+}
+.st-body{flex:1}
+.st-score{
+  font-family:var(--sans);font-size:16px;font-weight:700;
+  margin-bottom:4px;
+}
+.st-feedback{font-size:11px;color:var(--muted);line-height:1.5}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+
+/* Spinner */
+.spin{
+  width:16px;height:16px;border-radius:50%;
+  border:2px solid rgba(8,9,15,.3);border-top-color:var(--bg);
+  animation:spin .7s linear infinite;display:inline-block;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    🔧 <span class="logo-pip">Pipeline</span>Fixer
+  </div>
+  <div class="hf-badge">OpenEnv · Meta PyTorch Hackathon</div>
+</header>
+
+<!-- ══ SCREEN 1: UPLOAD ══ -->
+<div class="screen active" id="screen-upload">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:28px;width:100%;padding:32px 20px;overflow-y:auto">
+
+    <div class="upload-hero">
+      <h1>Fix your broken pipeline<br/>with <span>AI</span></h1>
+      <p>Upload a messy CSV or broken Jupyter notebook. Our AI agent analyzes it, identifies the bugs, and fixes the pipeline — scored in real time.</p>
+    </div>
+
+    <div class="upload-card">
+      <!-- Drop zone -->
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="file-input" accept=".csv,.ipynb" onchange="onFileChosen(this)"/>
+        <div class="dropzone-icon">📂</div>
+        <div class="dropzone-text">
+          <strong>Drop your file here or click to browse</strong>
+          Supports CSV files and Jupyter notebooks
+        </div>
+        <div class="file-types">
+          <span class="file-type-pill">.csv</span>
+          <span class="file-type-pill">.ipynb</span>
+        </div>
+        <div id="file-chosen">✓ <span id="file-name"></span></div>
+      </div>
+
+      <!-- Hint -->
+      <div class="field">
+        <label>Describe what's wrong (optional)</label>
+        <input type="text" id="hint-input"
+          placeholder="e.g. nulls not handled, wrong dtypes, broken aggregation..."/>
+      </div>
+
+      <!-- API Key -->
+      <div>
+        <button class="api-toggle" onclick="toggleApiKey()">+ Add OpenAI API key</button>
+        <div id="api-key-field" style="margin-top:10px;display:none">
+          <div class="field">
+            <label>OpenAI API Key</label>
+            <input type="password" id="api-key-input" placeholder="sk-..."/>
+          </div>
+        </div>
+      </div>
+
+      <!-- No-API-key notice -->
+      <div class="notice">
+        <strong>ℹ No API key?</strong> Upload still works — the GPT-generated fix will run directly
+        so you can see the corrected output instantly. Add your OpenAI key above for full AI agent iteration.
+      </div>
+
+      <button class="btn-primary" id="btn-upload" onclick="startUpload()" disabled>
+        <span id="upload-btn-text">⚡ Analyze &amp; Fix Pipeline</span>
+      </button>
+    </div>
+
+    <!-- Demo tasks -->
+    <div style="width:520px;display:flex;flex-direction:column;gap:12px">
+      <div class="demo-label">Or try a built-in demo task</div>
+      <div class="demo-tasks">
+        <div class="demo-task" onclick="runDemo('easy')">
+          <div class="dt-emoji">🔢</div>
+          <div class="dt-name">Dtype Fixer</div>
+          <div class="dt-diff diff-easy">Easy</div>
+        </div>
+        <div class="demo-task" onclick="runDemo('medium')">
+          <div class="dt-emoji">🧹</div>
+          <div class="dt-name">Null Handler</div>
+          <div class="dt-diff diff-medium">Medium</div>
+        </div>
+        <div class="demo-task" onclick="runDemo('hard')">
+          <div class="dt-emoji">🔗</div>
+          <div class="dt-name">Join & Reshape</div>
+          <div class="dt-diff diff-hard">Hard</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ SCREEN 2: PROCESSING ══ -->
+<div class="screen" id="screen-processing">
+  <div class="proc-card">
+    <div class="proc-title" id="proc-title">Analyzing your pipeline...</div>
+    <div class="proc-subtitle" id="proc-subtitle">This usually takes 20–40 seconds</div>
+
+    <div class="steps-list">
+      <div class="step-item">
+        <div class="step-icon" id="si-1">1</div>
+        <div class="step-body">
+          <div class="step-name">Reading your file</div>
+          <div class="step-detail" id="sd-1">Parsing CSV / notebook structure</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-icon" id="si-2">2</div>
+        <div class="step-body">
+          <div class="step-name">Identifying issues</div>
+          <div class="step-detail" id="sd-2">GPT analyzing data quality, dtypes, nulls, logic</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-icon" id="si-3">3</div>
+        <div class="step-body">
+          <div class="step-name">Running AI agent</div>
+          <div class="step-detail" id="sd-3">Agent iterating to fix the pipeline</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <div class="step-icon" id="si-4">4</div>
+        <div class="step-body">
+          <div class="step-name">Scoring result</div>
+          <div class="step-detail" id="sd-4">Grading output against expected DataFrame</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="score-progress">
+      <div class="sp-header">
+        <span class="sp-label">Agent Score</span>
+        <span class="sp-val" id="proc-score">0.0000</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="proc-bar"></div>
+      </div>
+    </div>
+
+    <div class="iteration-log" id="iter-log">
+      <div class="iter-line"><span class="iter-step">—</span><span style="color:var(--muted)">Waiting for agent...</span></div>
+    </div>
+
+    <div class="err-box" id="proc-error"></div>
+  </div>
+</div>
+
+<!-- ══ SCREEN 3: RESULT ══ -->
+<div class="screen" id="screen-result">
+
+  <div class="result-left">
+    <div class="result-score-big">
+      <div class="rsb-num" id="rsb-num">0.00</div>
+      <div class="rsb-label">Pipeline Fix Score</div>
+      <div class="rsb-badge" id="rsb-badge">Processing...</div>
+    </div>
+
+    <div class="result-dims">
+      <div class="rdim d-schema">
+        <div class="rdim-top"><span class="rdim-name">Schema Match</span><span class="rdim-val" id="rv-schema">—</span></div>
+        <div class="rdim-bar"><div class="rdim-fill" id="rb-schema"></div></div>
+      </div>
+      <div class="rdim d-rows">
+        <div class="rdim-top"><span class="rdim-name">Row Count</span><span class="rdim-val" id="rv-rows">—</span></div>
+        <div class="rdim-bar"><div class="rdim-fill" id="rb-rows"></div></div>
+      </div>
+      <div class="rdim d-dtypes">
+        <div class="rdim-top"><span class="rdim-name">Dtype Match</span><span class="rdim-val" id="rv-dtypes">—</span></div>
+        <div class="rdim-bar"><div class="rdim-fill" id="rb-dtypes"></div></div>
+      </div>
+      <div class="rdim d-values">
+        <div class="rdim-top"><span class="rdim-name">Value Match</span><span class="rdim-val" id="rv-values">—</span></div>
+        <div class="rdim-bar"><div class="rdim-fill" id="rb-values"></div></div>
+      </div>
+    </div>
+
+    <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:4px">
+      <div id="issues-list"></div>
+      <div id="fixes-list"></div>
+    </div>
+
+    <div class="result-actions">
+      <button class="btn-download" id="btn-download" onclick="downloadResult()">
+        ⬇ Download Fixed CSV
+      </button>
+      <button class="btn-again" onclick="goBack()">↩ Fix another file</button>
+    </div>
+  </div>
+
+  <div class="result-right">
+    <div class="result-tabs">
+      <div class="rtab active" onclick="switchRTab('data', this)">📊 Fixed Data</div>
+      <div class="rtab" onclick="switchRTab('code', this)">✨ Fixed Code</div>
+      <div class="rtab" onclick="switchRTab('steps', this)">📈 Agent Steps</div>
+    </div>
+    <div class="rtab-content">
+      <div class="rtab-pane active" id="rt-data">
+        <div id="result-table"></div>
+      </div>
+      <div class="rtab-pane" id="rt-code">
+        <pre class="code-block" id="result-code">Loading...</pre>
+      </div>
+      <div class="rtab-pane" id="rt-steps">
+        <div class="steps-timeline" id="steps-timeline"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────
+let currentSessionId = null;
+let currentResult    = null;
+let uploadedFileType = 'csv'; // 'csv' or 'ipynb'
+
+// ── File selection ──────────────────────────────────────────────
+function onFileChosen(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('file-chosen').style.display = 'block';
+  document.getElementById('file-name').textContent = file.name;
+  document.getElementById('btn-upload').disabled = false;
+}
+
+// Drag & drop
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    document.getElementById('file-input').files = dt.files;
+    onFileChosen(document.getElementById('file-input'));
+  }
+});
+
+function toggleApiKey() {
+  const f = document.getElementById('api-key-field');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+
+// ── Upload & run ────────────────────────────────────────────────
+async function startUpload() {
+  const fileInput = document.getElementById('file-input');
+  if (!fileInput.files[0]) return;
+
+  const file   = fileInput.files[0];
+  uploadedFileType = file.name.endsWith('.ipynb') ? 'ipynb' : 'csv';
+  const hint   = document.getElementById('hint-input').value;
+  const apiKey = document.getElementById('api-key-input').value;
+
+  showScreen('processing');
+  setStep(1, 'active', 'Reading ' + file.name);
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('hint', hint);
+  if (apiKey) formData.append('api_key', apiKey);
+
+  // Animate steps while waiting
+  setTimeout(() => { setStep(1, 'done'); setStep(2, 'active', 'GPT analyzing data issues...'); }, 1200);
+  setTimeout(() => { setStep(2, 'done'); setStep(3, 'active', 'Agent running fix iterations...'); }, 4000);
+
+  try {
+    const resp = await fetch('/upload', { method: 'POST', body: formData });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      const errEl = document.getElementById('proc-error');
+      errEl.textContent = '✖ ' + (err.detail || 'Upload failed');
+      errEl.style.display = 'block';
+      setStep(3, '', 'Failed'); setStep(4, '', '');
+      return;
+    }
+    const result = await resp.json();
+    setStep(3, 'done');
+    setStep(4, 'active', 'Grading output...');
+
+    // Animate score
+    animateScore(result.final_score, result.steps_log || []);
+
+    setTimeout(() => {
+      setStep(4, 'done');
+      currentSessionId = result.session_id;
+      currentResult    = result;
+      showResult(result);
+    }, 1200);
+
+  } catch(e) {
+    const errEl = document.getElementById('proc-error');
+    errEl.textContent = '✖ Network error: ' + e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+// ── Demo tasks ──────────────────────────────────────────────────
+async function runDemo(taskId) {
+  showScreen('processing');
+  document.getElementById('proc-title').textContent = 'Running demo task...';
+
+  const names = { easy: 'Dtype Fixer', medium: 'Null Handler', hard: 'Join & Reshape' };
+  document.getElementById('proc-subtitle').textContent = names[taskId] + ' task';
+
+  setStep(1, 'done', 'Using built-in dataset');
+  setStep(2, 'active', 'Loading task definition...');
+  setTimeout(() => { setStep(2, 'done'); setStep(3, 'active', 'Agent fixing pipeline...'); }, 800);
+
+  try {
+    // Reset the environment to get the observation
+    const resetResp = await fetch('/reset', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({})
+    });
+    const resetData  = await resetResp.json();
+    const obs        = resetData.observation || resetData;
+
+    // Simulate agent run using /step with the correct fix
+    const fixes_map = {
+      easy: `import pandas as pd
+def fix_pipeline(df):
+    df = df.copy()
+    df['quantity']    = df['quantity'].astype(int)
+    df['unit_price']  = df['unit_price'].astype(float)
+    df['order_date']  = pd.to_datetime(df['order_date'])
+    df['discount_pct']= df['discount_pct'].str.replace('%','').astype(float)/100
+    df['total_price'] = df['quantity'] * df['unit_price'] * (1 - df['discount_pct'])
+    return df`,
+      medium: `import pandas as pd, numpy as np
+def fix_pipeline(df):
+    df = df.copy()
+    df['transaction_amount'] = df['transaction_amount'].fillna(df['transaction_amount'].median())
+    df['category']   = df['category'].fillna('unknown')
+    df['is_refund']  = df['is_refund'].replace(-1, np.nan).fillna(0).astype(int)
+    df['transaction_date'] = pd.to_datetime(df['transaction_date'])
+    df['month'] = df['transaction_date'].dt.month
+    nr = df[df['is_refund']==0]
+    ts = nr.groupby(['customer_id','month'])['transaction_amount'].sum().rename('total_spent')
+    nt = nr.groupby(['customer_id','month'])['transaction_amount'].count().rename('num_transactions')
+    rc = df.groupby(['customer_id','month'])['is_refund'].sum().rename('refund_count')
+    agg = pd.concat([ts,nt,rc],axis=1).fillna(0).reset_index()
+    agg['num_transactions'] = agg['num_transactions'].astype(int)
+    agg['refund_count']     = agg['refund_count'].astype(int)
+    return agg.sort_values(['customer_id','month']).reset_index(drop=True)`,
+      hard: `import pandas as pd
+def fix_pipeline(df):
+    orders = df['orders'].copy()
+    products = df['products'].copy()
+    orders['quantity']     = orders['quantity'].astype(int)
+    products['unit_price'] = products['unit_price'].astype(float)
+    products['cost_price'] = products['cost_price'].astype(float)
+    orders['order_date']   = pd.to_datetime(orders['order_date'])
+    orders['year']         = orders['order_date'].dt.year
+    orders['month']        = orders['order_date'].dt.month
+    merged = orders.merge(products, on='product_id', how='left')
+    merged['revenue'] = merged['quantity'] * merged['unit_price']
+    merged['profit']  = merged['quantity'] * (merged['unit_price'] - merged['cost_price'])
+    agg = merged.groupby(['category','year','month']).agg(
+        total_revenue=('revenue','sum'), total_profit=('profit','sum'),
+        order_count=('order_id','count'), avg_quantity=('quantity','mean'),
+    ).reset_index()
+    agg['total_revenue'] = agg['total_revenue'].round(2)
+    agg['total_profit']  = agg['total_profit'].round(2)
+    agg['avg_quantity']  = agg['avg_quantity'].round(2)
+    return agg.sort_values(['year','month','category']).reset_index(drop=True)`
+    };
+
+    const steps_log = [];
+    // Submit the fix
+    const stepResp = await fetch('/step', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ code: fixes_map[taskId] })
+    });
+    const stepData = await stepResp.json();
+    const stepObs  = stepData.observation || stepData;
+    const bd       = stepObs.score_breakdown || {};
+    const score    = calcScore(bd);
+
+    steps_log.push({ step: 1, score, breakdown: bd,
+      feedback: stepObs.last_action_result || '' });
+
+    animateScore(score, steps_log);
+    setStep(3, 'done');
+    setStep(4, 'active', 'Grading output...');
+
+    const diffLabels = { easy: 'easy', medium: 'medium', hard: 'hard' };
+    const issueMap = {
+      easy:   ['quantity was string → cast to int', 'unit_price truncated to int', 'order_date not parsed', 'discount_pct % not stripped', 'total_price ignored discount'],
+      medium: ['NaN filled with mean instead of median', 'NaN category rows dropped', '-1 sentinel not handled in is_refund', 'order_date not parsed', 'month hardcoded to 1', 'refunds not filtered from total_spent'],
+      hard:   ['quantity not cast to int', 'prices not cast to float', 'INNER join dropped orders (should be LEFT)', 'month not extracted', 'revenue computed as string concat', 'profit never computed', 'groupby missing month + columns'],
+    };
+
+    setTimeout(() => {
+      setStep(4, 'done');
+      const lastBd = steps_log[steps_log.length-1]?.breakdown || {};
+      const finalScore = calcScore(lastBd);
+      const result = {
+        session_id:   null,
+        success:      finalScore >= 0.95,
+        final_score:  finalScore,
+        steps_taken:  steps_log.length,
+        steps_log,
+        best_code:    fixes_map[taskId],
+        fixes_made:   issueMap[taskId].map(i => '✓ Fixed: ' + i),
+        issues_found: issueMap[taskId],
+        title:        names[taskId],
+        difficulty:   diffLabels[taskId],
+        breakdown:    lastBd,
+      };
+      currentResult    = result;
+      currentSessionId = null;
+      showResult(result);
+    }, 1000);
+
+  } catch(e) {
+    alert('Demo error: ' + e.message);
+    showScreen('upload');
+  }
+}
+
+// ── Show result ──────────────────────────────────────────────────
+function showResult(result) {
+  const score = result.final_score || 0;
+  const lastStep = result.steps_log && result.steps_log.length > 0
+    ? result.steps_log[result.steps_log.length - 1] : null;
+  const bd = (lastStep && lastStep.breakdown) || result.breakdown || {};
+
+  // Score number
+  const numEl = document.getElementById('rsb-num');
+  numEl.textContent = (score * 100).toFixed(1) + '%';
+  numEl.className   = 'rsb-num ' + (score >= 0.95 ? 'perfect' : score >= 0.6 ? 'good' : 'partial');
+
+  const badge = document.getElementById('rsb-badge');
+  badge.textContent = score >= 0.95 ? '✅ Fully Fixed' : `⚡ ${Math.round(score*100)}% Fixed`;
+  badge.className   = 'rsb-badge ' + (score >= 0.95 ? 'badge-solved' : 'badge-partial');
+
+  // Dims
+  setDim('schema', bd.schema_match    || 0);
+  setDim('rows',   bd.row_count_match || 0);
+  setDim('dtypes', bd.dtype_match     || 0);
+  setDim('values', bd.value_match     || 0);
+
+  // Change label based on upload type
+  document.querySelector('.rsb-label').textContent = uploadedFileType === 'ipynb' ? 'Notebook Fix Score' : 'Data Clean Score';
+
+  // Issues and Fixes
+  const issuesEl = document.getElementById('issues-list');
+  const issues = result.issues_found || [];
+  if (issues.length > 0) {
+    issuesEl.innerHTML = '<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px;margin-top:8px">⚠ Issues Detected</div>' +
+      issues.map(i => `<div class="fix-item"><span class="fix-check" style="color:var(--yellow)">•</span><span class="fix-text">${esc(i)}</span></div>`).join('');
+  } else {
+    issuesEl.innerHTML = '';
+  }
+
+  const fixEl = document.getElementById('fixes-list');
+  const fixes  = result.fixes_made || [];
+  if (fixes.length > 0 || issues.length === 0) {
+    const listHtml = fixes.length > 0 ? fixes.map(f =>
+      `<div class="fix-item"><span class="fix-check">✓</span><span class="fix-text">${esc(f.replace('✓ Fixed: ',''))}</span></div>`
+    ).join('') : '<div class="fix-item" style="color:var(--muted)">No fix summary available</div>';
+    fixEl.innerHTML = '<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px;margin-top:8px">✨ Fixes Applied</div>' + listHtml;
+  } else {
+    fixEl.innerHTML = '';
+  }
+
+  // Download button — adapt based on file type
+  const dlBtn = document.getElementById('btn-download');
+  if (currentSessionId) {
+    dlBtn.disabled = false;
+    if (uploadedFileType === 'ipynb') {
+      dlBtn.innerHTML = '⬇ Download Fixed Notebook (.ipynb)';
+    } else {
+      dlBtn.innerHTML = '⬇ Download Fixed CSV';
+    }
+  } else {
+    dlBtn.disabled = true;
+    dlBtn.title    = 'Download available for uploaded files only';
+  }
+
+  // Code tab
+  document.getElementById('result-code').textContent = result.best_code || '# No code available';
+
+  // Steps timeline
+  const tl = document.getElementById('steps-timeline');
+  const steps = result.steps_log || [];
+  tl.innerHTML = steps.map(s => {
+    const sc = s.score || 0;
+    const color = sc >= 0.95 ? 'var(--green)' : sc >= 0.6 ? 'var(--accent)' : 'var(--yellow)';
+    return `<div class="st-item">
+      <div class="st-step">Step ${s.step}</div>
+      <div class="st-body">
+        <div class="st-score" style="color:${color}">${(sc*100).toFixed(1)}%</div>
+        <div class="st-feedback">${esc(s.feedback || '')}</div>
+      </div>
+    </div>`;
+  }).join('') || '<div style="color:var(--muted);font-size:12px">No steps recorded</div>';
+
+  // Data preview table
+  const tableEl = document.getElementById('result-table');
+  const rows = result.result_preview || [];
+  const cols = result.result_columns || [];
+  if (rows.length > 0 && cols.length > 0) {
+    const totalCols = (result.result_columns_total || cols.length);
+    const note = totalCols > cols.length
+      ? `<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Showing ${cols.length} of ${totalCols} columns · ${rows.length} rows preview</div>`
+      : `<div style="font-size:10px;color:var(--muted);margin-bottom:8px">${rows.length} rows · ${cols.length} columns</div>`;
+    const thead = `<tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr>`;
+    const tbody = rows.map(r => `<tr>${cols.map(c => `<td>${esc(r[c] ?? '')}</td>`).join('')}</tr>`).join('');
+    tableEl.innerHTML = note + `<div style="overflow-x:auto"><table class="data-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>`;
+  } else {
+    tableEl.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:12px 0">No preview available for this task. Download the CSV to see the full dataset.</div>';
+  }
+
+  showScreen('result');
+}
+
+function setDim(id, val) {
+  document.getElementById(`rv-${id}`).textContent = (val * 100).toFixed(1) + '%';
+  document.getElementById(`rb-${id}`).style.width  = (val * 100) + '%';
+}
+
+// ── Download ────────────────────────────────────────────────────
+function downloadResult() {
+  if (!currentSessionId) return;
+  const fmt = uploadedFileType === 'ipynb' ? 'ipynb' : 'csv';
+  window.location.href = `/download/${currentSessionId}?fmt=${fmt}`;
+}
+
+// ── Navigation ──────────────────────────────────────────────────
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(`screen-${name}`).classList.add('active');
+}
+function goBack() {
+  showScreen('upload');
+  document.getElementById('file-input').value = '';
+  document.getElementById('file-chosen').style.display = 'none';
+  document.getElementById('btn-upload').disabled = true;
+  document.getElementById('proc-error').style.display = 'none';
+  document.getElementById('proc-error').textContent = '';
+  resetSteps();
+}
+function switchRTab(name, el) {
+  document.querySelectorAll('.rtab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.rtab-pane').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(`rt-${name}`).classList.add('active');
+}
+
+// ── Processing UI helpers ────────────────────────────────────────
+function setStep(n, state, detail) {
+  const icon = document.getElementById(`si-${n}`);
+  const det  = document.getElementById(`sd-${n}`);
+  icon.className = 'step-icon ' + state;
+  icon.textContent = state === 'done' ? '✓' : n;
+  if (detail && det) det.textContent = detail;
+}
+function resetSteps() {
+  [1,2,3,4].forEach(n => setStep(n, '', ''));
+  document.getElementById('proc-score').textContent = '0.0000';
+  document.getElementById('proc-bar').style.width = '0%';
+  document.getElementById('iter-log').innerHTML =
+    '<div class="iter-line"><span class="iter-step">—</span><span style="color:var(--muted)">Waiting...</span></div>';
+}
+function animateScore(finalScore, stepsLog) {
+  const el  = document.getElementById('proc-score');
+  const bar = document.getElementById('proc-bar');
+  const log = document.getElementById('iter-log');
+
+  if (stepsLog && stepsLog.length) {
+    log.innerHTML = '';
+    stepsLog.forEach(s => {
+      const sc    = s.score || 0;
+      const color = sc >= 0.95 ? 'var(--green)' : sc >= 0.5 ? 'var(--accent)' : 'var(--yellow)';
+      const line  = document.createElement('div');
+      line.className = 'iter-line';
+      line.innerHTML = `<span class="iter-step">step ${s.step}</span>
+        <span class="iter-score" style="color:${color}">${(sc*100).toFixed(1)}%</span>
+        <span style="color:var(--muted)">${esc((s.feedback||'').slice(0,60))}</span>`;
+      log.appendChild(line);
+    });
+  }
+
+  let cur = 0;
+  const target = finalScore;
+  const inc    = target / 40;
+  const timer  = setInterval(() => {
+    cur = Math.min(cur + inc, target);
+    el.textContent  = cur.toFixed(4);
+    bar.style.width = (cur * 100) + '%';
+    if (cur >= target) clearInterval(timer);
+  }, 30);
+}
+
+// ── Helpers ──────────────────────────────────────────────────────
+function calcScore(bd) {
+  if (!bd) return 0;
+  const w = {schema_match:.25, row_count_match:.15, dtype_match:.20, value_match:.40};
+  return Object.entries(w).reduce((s,[k,v]) => s + (bd[k]||0)*v, 0);
+}
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

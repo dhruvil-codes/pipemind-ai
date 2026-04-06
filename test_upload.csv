@@ -1,0 +1,4 @@
+﻿order_id,quantity,unit_price,order_date,discount_pct
+ORD-0001,5,10.50,2024-01-01,10%
+ORD-0002,3,25.00,2024-01-02,0%
+ORD-0003,10,8.75,2024-01-03,5%

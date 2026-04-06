@@ -1,0 +1,49 @@
+name: pipeline-debugger-env
+version: "1.0.0"
+description: >
+  A real-world OpenEnv environment where AI agents debug broken pandas data
+  transformation pipelines. Three tasks of increasing difficulty test dtype
+  fixing, null handling + aggregation, and multi-table join + reshaping.
+author: Dhruvil Mistry
+tags:
+  - openenv
+  - data-engineering
+  - pandas
+  - debugging
+  - real-world
+tasks:
+  - id: easy
+    description: Fix dtype bugs in a sales pipeline (quantity, price, date, discount)
+    difficulty: easy
+    max_steps: 10
+  - id: medium
+    description: Fix null handling and aggregation logic in a transactions pipeline
+    difficulty: medium
+    max_steps: 15
+  - id: hard
+    description: Fix multi-table join, derived columns, and reshape across orders+products
+    difficulty: hard
+    max_steps: 20
+action_space:
+  type: text
+  description: Python code defining fix_pipeline(df) -> pd.DataFrame
+observation_space:
+  fields:
+    - task_id
+    - task_description
+    - broken_code
+    - input_data
+    - expected_output_sample
+    - last_action_result
+    - last_reward
+    - step_count
+    - done
+    - score_breakdown
+reward:
+  min: -0.05
+  max: 1.5
+  description: >
+    Score (0–1) based on schema match, row count match, dtype match, and value match.
+    Bonus for improvement and solving. Small penalty per step and for execution errors.
+sdk: openenv-core>=0.2.0
+python: ">=3.10"
