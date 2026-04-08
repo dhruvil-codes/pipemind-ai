@@ -1,8 +1,9 @@
-# Pipeline Fixer (OpenEnv Benchmark)
+# 🧠 Pipemind AI (OpenEnv Benchmark)
 
-Pipeline Fixer is a real-world, interactive AI evaluation environment built on the OpenEnv standard. It evaluates the ability of LLM-based autonomous agents to debug and correct broken pandas data transformations.
+Pipemind AI is a real-world, interactive AI evaluation environment built on the OpenEnv standard. It evaluates the ability of LLM-based autonomous agents to debug and correct broken pandas data transformations.
 
-Unlike toy game environments, Pipeline Fixer simulates a standard workflow of a data engineer: receiving a broken pipeline script, inspecting the inputs and intended outputs, analyzing the exceptions/broken state, and producing corrected pandas code. 
+Unlike toy game environments, Pipemind AI simulates a standard workflow of a data engineer: receiving a broken pipeline script, inspecting the inputs and intended outputs, analyzing the exceptions/broken state, and producing corrected pandas code.
+
 
 ## 🛠️ The Environment 
 The agent takes on the role of a data engineer. Each step:
@@ -45,8 +46,8 @@ The environment includes three built-in deterministic tasks providing a scalable
 ## 🐳 Docker Support
 A fully working `Dockerfile` is included.
 ```bash
-docker build -t pipeline-env .
-docker run -p 8000:8000 pipeline-env
+docker build -t pipemind-ai .
+docker run -p 8000:8000 pipemind-ai
 ```
 
 ## 🧠 Action & Observation Space
