@@ -250,3 +250,13 @@ async def download_result(session_id: str, fmt: str = "csv"):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=fixed_pipeline_{session_id[:8]}.csv"},
     )
+
+
+def main():
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    host = os.environ.get("HOST", "0.0.0.0")
+    uvicorn.run(app, host=host, port=port)
+
+if __name__ == "__main__":
+    main()

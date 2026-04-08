@@ -22,3 +22,7 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["server*", "models*", "client*"]
+
+[project.scripts]
+openenv-server = "server.app:main"
+server = "server.app:main"
