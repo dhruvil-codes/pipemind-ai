@@ -1,4 +1,4 @@
-# 🧠 Pipemind AI 
+# 🧠 Pipemind AI (OpenEnv Benchmark)
 
 Pipemind AI is a real-world, interactive AI evaluation environment built on the OpenEnv standard. It evaluates the ability of LLM-based autonomous agents to debug and correct broken pandas data transformations.
 
