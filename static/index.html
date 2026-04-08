@@ -600,6 +600,7 @@ async function startUpload() {
 // ── Demo tasks ──────────────────────────────────────────────────
 async function runDemo(taskId) {
   showScreen('processing');
+  resetSteps();
   const names = { easy: 'Dtype Fixer', medium: 'Null Handler', hard: 'Join & Reshape' };
   document.getElementById('proc-title').textContent = 'Running ' + names[taskId] + '...';
   document.getElementById('proc-subtitle').textContent = taskId + ' difficulty task';

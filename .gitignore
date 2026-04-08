@@ -1,10 +1,31 @@
+# Python cache
 __pycache__/
 *.pyc
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment variables (IMPORTANT)
 .env
+
+# Logs & outputs
 outputs/
 logs/
+*.log
+
+# Experiment / eval artifacts
 evals/
 baseline_results.json
-*.log
+
+# Build / packaging
 *.egg-info/
-.venv/
+dist/
+build/
+
+# Git
+.git/
+
+# OS files
+.DS_Store
+Thumbs.db
