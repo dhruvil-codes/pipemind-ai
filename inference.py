@@ -38,11 +38,7 @@ BENCHMARK     = "pipeline-debugger-env"
 SUCCESS_SCORE = 0.95
 
 # ── OpenAI client ────────────────────────────────────────────────────────────
-client = OpenAI(
-    base_url=API_BASE_URL,
-    api_key=HF_TOKEN or "dummy",
-)
-
+# Client initialized inside get_model_response
 SYSTEM_PROMPT = """\
 You are an expert Python/pandas data engineer.
 You will be given a broken data pipeline and must fix it.
@@ -96,6 +92,10 @@ def build_user_prompt(observation: dict, step: int, history: list) -> str:
 
 def get_model_response(prompt: str) -> str:
     """Call the LLM and return generated code."""
+    client = OpenAI(
+        base_url=os.environ.get("API_BASE_URL", ""),
+        api_key=os.environ.get("HF_TOKEN", "dummy"),
+    )
     try:
         completion = client.chat.completions.create(
             model=MODEL_NAME,
