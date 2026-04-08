@@ -26,6 +26,10 @@ build/
 # Git
 .git/
 
+# Test / scratch files
+test_upload.csv
+*.test.csv
+
 # OS files
 .DS_Store
 Thumbs.db
