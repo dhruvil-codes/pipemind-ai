@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🧠 Pipemind AI (OpenEnv Benchmark)
 
 Pipemind AI is a real-world, interactive AI evaluation environment built on the OpenEnv standard. It evaluates the ability of LLM-based autonomous agents to debug and correct broken pandas data transformations.
@@ -58,3 +59,17 @@ docker run -p 8000:8000 pipemind-ai
 ## ⚙️ Submission Details
 - **Code Quality:** Type hints and Pydantic models validate seamlessly against `openenv-core`.
 - **Global State Handling:** Employs a module-level dictionary to persist environment context gracefully across FastAPIs' distinct `/reset` and `/step` HTTP lifecycle.
+=======
+---
+title: Pipemind Ai
+emoji: 👁
+colorFrom: yellow
+colorTo: green
+sdk: docker
+pinned: false
+license: mit
+short_description: Interactive evaluation environment for AI Agents.
+---
+
+Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
+>>>>>>> f3ac0d3f11a63aea99fb7b191cdb41cae25df0d2
