@@ -21,7 +21,7 @@ class PipelineObservation(Observation):
     Observation returned after each step.
     Inherits `done`, `reward`, `metadata` from base Observation.
     """
-    task_id: str = Field(..., description="Current task: easy | medium | hard")
+    task_id: str = Field(..., description="Current task: easy | medium | hard or dynamic UUID")
     task_description: str = Field(..., description="What the agent must fix")
     broken_code: str = Field(..., description="The broken pipeline code to fix")
     input_data: str = Field(..., description="JSON-serialized input DataFrame (records orientation)")
@@ -32,6 +32,11 @@ class PipelineObservation(Observation):
         None,
         description="Per-dimension scores: schema_match, row_count_match, dtype_match, value_match"
     )
+    # Explicit fields required by OpenEnv serialization
+    reward: float = Field(0.0, description="Reward for the current step")
+    done: bool = Field(False, description="Whether the episode has terminated")
+    info: Dict[str, Any] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class PipelineState(State):

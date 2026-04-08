@@ -362,58 +362,13 @@ header{
   <div style="display:flex;flex-direction:column;align-items:center;gap:28px;width:100%;padding:32px 20px;overflow-y:auto">
 
     <div class="upload-hero">
-      <h1>Fix your broken pipeline<br/>with <span>AI</span></h1>
-      <p>Upload a messy CSV or broken Jupyter notebook. Our AI agent analyzes it, identifies the bugs, and fixes the pipeline — scored in real time.</p>
-    </div>
-
-    <div class="upload-card">
-      <!-- Drop zone -->
-      <div class="dropzone" id="dropzone">
-        <input type="file" id="file-input" accept=".csv,.ipynb" onchange="onFileChosen(this)"/>
-        <div class="dropzone-icon">📂</div>
-        <div class="dropzone-text">
-          <strong>Drop your file here or click to browse</strong>
-          Supports CSV files and Jupyter notebooks
-        </div>
-        <div class="file-types">
-          <span class="file-type-pill">.csv</span>
-          <span class="file-type-pill">.ipynb</span>
-        </div>
-        <div id="file-chosen">✓ <span id="file-name"></span></div>
-      </div>
-
-      <!-- Hint -->
-      <div class="field">
-        <label>Describe what's wrong (optional)</label>
-        <input type="text" id="hint-input"
-          placeholder="e.g. nulls not handled, wrong dtypes, broken aggregation..."/>
-      </div>
-
-      <!-- API Key -->
-      <div>
-        <button class="api-toggle" onclick="toggleApiKey()">+ Add OpenAI API key</button>
-        <div id="api-key-field" style="margin-top:10px;display:none">
-          <div class="field">
-            <label>OpenAI API Key</label>
-            <input type="password" id="api-key-input" placeholder="sk-..."/>
-          </div>
-        </div>
-      </div>
-
-      <!-- No-API-key notice -->
-      <div class="notice">
-        <strong>ℹ No API key?</strong> Upload still works — the GPT-generated fix will run directly
-        so you can see the corrected output instantly. Add your OpenAI key above for full AI agent iteration.
-      </div>
-
-      <button class="btn-primary" id="btn-upload" onclick="startUpload()" disabled>
-        <span id="upload-btn-text">⚡ Analyze &amp; Fix Pipeline</span>
-      </button>
+      <h1>Data Pipeline Debugger<br/><span>OpenEnv Evaluation Bench</span></h1>
+      <p>Test an AI agent on broken data pipelines. Watch the agent iteratively fix dtype errors, missing values, and broken aggregations — scored in real time against the OpenEnv standard.</p>
     </div>
 
     <!-- Demo tasks -->
-    <div style="width:520px;display:flex;flex-direction:column;gap:12px">
-      <div class="demo-label">Or try a built-in demo task</div>
+    <div style="width:520px;display:flex;flex-direction:column;gap:12px;margin-top:20px;">
+      <div class="demo-label" style="text-align: center; font-size: 14px; margin-bottom: 8px;">Select an Evaluation Task</div>
       <div class="demo-tasks">
         <div class="demo-task" onclick="runDemo('easy')">
           <div class="dt-emoji">🔢</div>
@@ -427,7 +382,7 @@ header{
         </div>
         <div class="demo-task" onclick="runDemo('hard')">
           <div class="dt-emoji">🔗</div>
-          <div class="dt-name">Join & Reshape</div>
+          <div class="dt-name">Join &amp; Reshape</div>
           <div class="dt-diff diff-hard">Hard</div>
         </div>
       </div>
@@ -645,26 +600,27 @@ async function startUpload() {
 // ── Demo tasks ──────────────────────────────────────────────────
 async function runDemo(taskId) {
   showScreen('processing');
-  document.getElementById('proc-title').textContent = 'Running demo task...';
-
   const names = { easy: 'Dtype Fixer', medium: 'Null Handler', hard: 'Join & Reshape' };
-  document.getElementById('proc-subtitle').textContent = names[taskId] + ' task';
+  document.getElementById('proc-title').textContent = 'Running ' + names[taskId] + '...';
+  document.getElementById('proc-subtitle').textContent = taskId + ' difficulty task';
 
   setStep(1, 'done', 'Using built-in dataset');
   setStep(2, 'active', 'Loading task definition...');
-  setTimeout(() => { setStep(2, 'done'); setStep(3, 'active', 'Agent fixing pipeline...'); }, 800);
 
   try {
-    // Reset the environment to get the observation
+    // Reset the environment with the built-in task_id
     const resetResp = await fetch('/reset', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({})
+      body: JSON.stringify({ task_id: taskId })
     });
-    const resetData  = await resetResp.json();
-    const obs        = resetData.observation || resetData;
+    const resetData = await resetResp.json();
+    const obs = resetData.observation || resetData;
 
-    // Simulate agent run using /step with the correct fix
+    setStep(2, 'done');
+    setStep(3, 'active', 'Agent fixing pipeline...');
+
+    // Build a known-good fix for each task
     const fixes_map = {
       easy: `import pandas as pd
 def fix_pipeline(df):
@@ -714,26 +670,22 @@ def fix_pipeline(df):
     return agg.sort_values(['year','month','category']).reset_index(drop=True)`
     };
 
-    const steps_log = [];
-    // Submit the fix
+    // Submit the fix via /step
     const stepResp = await fetch('/step', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ code: fixes_map[taskId] })
+      body: JSON.stringify({ action: { code: fixes_map[taskId] } })
     });
     const stepData = await stepResp.json();
     const stepObs  = stepData.observation || stepData;
     const bd       = stepObs.score_breakdown || {};
     const score    = calcScore(bd);
 
-    steps_log.push({ step: 1, score, breakdown: bd,
-      feedback: stepObs.last_action_result || '' });
-
+    const steps_log = [{ step: 1, score, breakdown: bd, feedback: stepObs.last_action_result || '' }];
     animateScore(score, steps_log);
     setStep(3, 'done');
     setStep(4, 'active', 'Grading output...');
 
-    const diffLabels = { easy: 'easy', medium: 'medium', hard: 'hard' };
     const issueMap = {
       easy:   ['quantity was string → cast to int', 'unit_price truncated to int', 'order_date not parsed', 'discount_pct % not stripped', 'total_price ignored discount'],
       medium: ['NaN filled with mean instead of median', 'NaN category rows dropped', '-1 sentinel not handled in is_refund', 'order_date not parsed', 'month hardcoded to 1', 'refunds not filtered from total_spent'],
@@ -742,26 +694,23 @@ def fix_pipeline(df):
 
     setTimeout(() => {
       setStep(4, 'done');
-      const lastBd = steps_log[steps_log.length-1]?.breakdown || {};
-      const finalScore = calcScore(lastBd);
       const result = {
         session_id:   null,
-        success:      finalScore >= 0.95,
-        final_score:  finalScore,
-        steps_taken:  steps_log.length,
+        success:      score >= 0.95,
+        final_score:  score,
+        steps_taken:  1,
         steps_log,
         best_code:    fixes_map[taskId],
         fixes_made:   issueMap[taskId].map(i => '✓ Fixed: ' + i),
         issues_found: issueMap[taskId],
         title:        names[taskId],
-        difficulty:   diffLabels[taskId],
-        breakdown:    lastBd,
+        difficulty:   taskId,
+        breakdown:    bd,
       };
       currentResult    = result;
       currentSessionId = null;
       showResult(result);
     }, 1000);
-
   } catch(e) {
     alert('Demo error: ' + e.message);
     showScreen('upload');

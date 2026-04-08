@@ -19,4 +19,4 @@ ENV ENABLE_WEB_INTERFACE=true
 
 EXPOSE 8000
 
-CMD ["uvicorn", "pipeline_debugger_env.server.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]

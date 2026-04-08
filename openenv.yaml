@@ -40,10 +40,10 @@ observation_space:
     - done
     - score_breakdown
 reward:
-  min: -0.05
-  max: 1.5
+  min: 0.0
+  max: 1.0
   description: >
     Score (0–1) based on schema match, row count match, dtype match, and value match.
-    Bonus for improvement and solving. Small penalty per step and for execution errors.
+    Bonus for improvement and solving, clamped to [0, 1].
 sdk: openenv-core>=0.2.0
 python: ">=3.10"

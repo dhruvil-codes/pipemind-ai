@@ -373,35 +373,32 @@ def safe_execute_code(code: str, input_data, task_id: str):
 
 
 # ─────────────────────────────────────────────
-# TASK REGISTRY
+# TASK REGISTRY — 3 built-in tasks for hackathon evaluation
 # ─────────────────────────────────────────────
 
 TASKS = {
     "easy": {
-        "task_id":      "easy",
-        "description":  TASK_EASY_DESCRIPTION,
-        "broken_code":  TASK_EASY_BROKEN_CODE,
-        "get_input":    get_easy_input_df,
+        "description": TASK_EASY_DESCRIPTION,
+        "broken_code": TASK_EASY_BROKEN_CODE,
+        "get_input": get_easy_input_df,
         "get_expected": get_easy_expected_df,
-        "max_steps":    10,
         "input_is_dict": False,
+        "max_steps": 10,
     },
     "medium": {
-        "task_id":      "medium",
-        "description":  TASK_MEDIUM_DESCRIPTION,
-        "broken_code":  TASK_MEDIUM_BROKEN_CODE,
-        "get_input":    get_medium_input_df,
+        "description": TASK_MEDIUM_DESCRIPTION,
+        "broken_code": TASK_MEDIUM_BROKEN_CODE,
+        "get_input": get_medium_input_df,
         "get_expected": get_medium_expected_df,
-        "max_steps":    15,
         "input_is_dict": False,
+        "max_steps": 15,
     },
     "hard": {
-        "task_id":      "hard",
-        "description":  TASK_HARD_DESCRIPTION,
-        "broken_code":  TASK_HARD_BROKEN_CODE,
-        "get_input":    get_hard_input_df,
+        "description": TASK_HARD_DESCRIPTION,
+        "broken_code": TASK_HARD_BROKEN_CODE,
+        "get_input": get_hard_input_df,
         "get_expected": get_hard_expected_df,
-        "max_steps":    20,
         "input_is_dict": True,
+        "max_steps": 20,
     },
 }

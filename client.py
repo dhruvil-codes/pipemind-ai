@@ -1,7 +1,7 @@
 # client.py
 from openenv.core.env_client import EnvClient
 from openenv.core.client_types import StepResult
-from pipeline_debugger_env.models import PipelineAction, PipelineObservation, PipelineState
+from models import PipelineAction, PipelineObservation, PipelineState
 
 
 class PipelineDebuggerEnv(EnvClient[PipelineAction, PipelineObservation, PipelineState]):

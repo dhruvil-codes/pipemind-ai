@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "pipeline-debugger-env"
@@ -16,8 +16,9 @@ dependencies = [
     "numpy>=1.24.0",
     "requests>=2.25.0",
     "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["pipeline_debugger_env*"]
+include = ["server*", "models*", "client*"]

@@ -1,249 +1,59 @@
-# 🔧 Data Pipeline Debugger — OpenEnv Environment
+# Pipeline Fixer (OpenEnv Benchmark)
 
-An **OpenEnv** environment where AI agents debug broken `pandas` data transformation pipelines.
-Given buggy Python code and a dataset, the agent must submit a corrected `fix_pipeline` function
-that produces the expected output DataFrame.
+Pipeline Fixer is a real-world, interactive AI evaluation environment built on the OpenEnv standard. It evaluates the ability of LLM-based autonomous agents to debug and correct broken pandas data transformations.
 
-Built for the **Meta PyTorch OpenEnv Hackathon x SST 2026**.
+Unlike toy game environments, Pipeline Fixer simulates a standard workflow of a data engineer: receiving a broken pipeline script, inspecting the inputs and intended outputs, analyzing the exceptions/broken state, and producing corrected pandas code. 
 
----
+## 🛠️ The Environment 
+The agent takes on the role of a data engineer. Each step:
+1.  **Observation:** The agent receives a Pydantic `PipelineObservation` object containing the `task_id`, `broken_code`, serialized JSON `input_data`, the `expected_output_sample` schema, and performance feedback.
+2.  **Action:** The agent returns a `PipelineAction` with a single `code` string field, containing a Python function `fix_pipeline()`.
+3.  **Reward:** The environment securely executes the agent's code in a restricted pandas context, compares the resulting DataFrame against the hidden expected DataFrame, and returns a granular reward (0.0 to 1.0) based on schema match, data types, row counts, and strict value equality.
 
-## 🎯 Why This Environment?
+## 🎯 Task Progression
+The environment includes three built-in deterministic tasks providing a scalable difficulty curve:
 
-Every data scientist and ML engineer spends significant time debugging broken pipelines — wrong dtypes,
-mishandled nulls, incorrect aggregations, broken joins. This environment formalizes that real-world task
-into a structured, gradeable RL training problem.
+*   **Easy (`easy`): Dtype Fixer.** A broken sales pipeline pipeline where quantities exist as strings, prices are truncated, dates aren't parsed, and percentages include `%` symbols.
+*   **Medium (`medium`): Null Handler & Aggregation.** Transaction data containing `NaN` gaps, dropped crucial rows, and unhandled integer sentinels (-1). Requires median imputation, logical groupings, and conditional aggregations. 
+*   **Hard (`hard`): Multi-table Join & Reshape.** Simulates a relational database export. The agent receives a dictionary of two DataFrames (`orders` and `products`), and must safely `LEFT JOIN` them, calculate derived revenue/profit columns, and calculate complex group metrics by extracted datetime boundaries.
 
-**It is immediately useful for:**
+## 🚀 Running Locally
 
-- Evaluating LLMs on practical data engineering reasoning
-- Training agents to understand pandas semantics
-- Benchmarking code-generation models on correctness, not just syntax
+1. **Install dependencies:** 
+   We recommend using `uv` or standard pip.
+   ```bash
+   pip install -r server/requirements.txt
+   pip install -e .
+   ```
 
----
+2. **Start the Environment Server:**
+   ```bash
+   uvicorn server.app:app --host 0.0.0.0 --port 8000
+   ```
 
-## 🗂 Environment Structure
+3. **Run the Baseline Agent:**
+   In another terminal, export your active LLM API credentials that hit the HuggingFace router (or any OpenAI-compatible proxy), and run the evaluator script:
+   ```bash
+   export HF_TOKEN="hf_your_token_here"
+   export API_BASE_URL="https://router.huggingface.co/v1"
+   export MODEL_NAME="Qwen/Qwen2.5-Coder-32B-Instruct"
+   python inference.py
+   ```
+   
+   The `inference.py` adheres strictly to the `[START]`, `[STEP]`, and `[END]` logging format demanded by the hackathon automated evaluators.
 
-```
-pipeline_debugger_env/
-├── __init__.py              # Exports: PipelineAction, PipelineObservation, PipelineDebuggerEnv
-├── models.py                # Typed Pydantic: Action, Observation, State
-├── client.py                # PipelineDebuggerEnv (EnvClient)
-├── openenv.yaml             # Environment manifest
-├── pyproject.toml           # Dependencies
-├── inference.py             # Baseline inference script (root level)
-└── server/
-    ├── __init__.py
-    ├── app.py               # FastAPI app
-    ├── pipeline_environment.py  # Core Environment logic
-    ├── tasks.py             # Task definitions, datasets, graders
-    ├── requirements.txt
-    └── Dockerfile
-```
-
----
-
-## ⚡ Action Space
-
-The agent submits **Python code** as a string:
-
-```python
-PipelineAction(code="""
-import pandas as pd
-import numpy as np
-
-def fix_pipeline(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df['quantity'] = df['quantity'].astype(int)
-    # ... more fixes ...
-    return df
-""")
-```
-
-| Field  | Type  | Description                                                          |
-| ------ | ----- | -------------------------------------------------------------------- |
-| `code` | `str` | Python code defining `fix_pipeline(df)`. Must return `pd.DataFrame`. |
-
----
-
-## 👁 Observation Space
-
-| Field                    | Type    | Description                                                                           |
-| ------------------------ | ------- | ------------------------------------------------------------------------------------- |
-| `task_id`                | `str`   | `"easy"`, `"medium"`, or `"hard"`                                                     |
-| `task_description`       | `str`   | Full natural language description of what to fix                                      |
-| `broken_code`            | `str`   | The buggy pipeline code to fix                                                        |
-| `input_data`             | `str`   | JSON-serialized input DataFrame                                                       |
-| `expected_output_sample` | `str`   | First 3 rows of expected output (JSON)                                                |
-| `last_action_result`     | `str`   | Execution result or error from last step                                              |
-| `last_reward`            | `float` | Reward from last step                                                                 |
-| `step_count`             | `int`   | Steps taken so far                                                                    |
-| `done`                   | `bool`  | Episode complete flag                                                                 |
-| `score_breakdown`        | `dict`  | Per-dimension scores: `schema_match`, `row_count_match`, `dtype_match`, `value_match` |
-
----
-
-## 🏆 Tasks
-
-### Task 1 — Easy: Fix Dtype Bugs
-
-**Difficulty:** Easy | **Max steps:** 10
-
-A sales order dataset where dtypes are all wrong:
-
-- `quantity` cast to float instead of int
-- `unit_price` cast to int (loses decimals)
-- `order_date` not parsed to datetime
-- `discount_pct` is `"10%"` string, not parsed to `0.10`
-- `total_price` formula ignores the discount
-
-The agent must fix all 5 bugs and compute the correct `total_price`.
-
-**Expected baseline score:** ~0.75–0.90
-
----
-
-### Task 2 — Medium: Fix Null Handling + Aggregation
-
-**Difficulty:** Medium | **Max steps:** 15
-
-A customer transactions dataset with:
-
-- NaN amounts filled with mean instead of **median**
-- NaN categories **dropped** instead of filled with `"unknown"`
-- `-1` sentinel in `is_refund` not replaced before filling
-- `order_date` not parsed; `month` hardcoded to `1`
-- Aggregation doesn't filter refunds from `total_spent`
-
-The agent must fix null handling and produce correct customer×month aggregations.
-
-**Expected baseline score:** ~0.50–0.75
-
----
-
-### Task 3 — Hard: Fix Multi-Table Join + Reshape
-
-**Difficulty:** Hard | **Max steps:** 20
-
-Two DataFrames (`orders` + `products`) with:
-
-- Quantities and prices not cast from string
-- INNER join used instead of **LEFT join** (drops unmatched orders)
-- `month` column never extracted
-- `revenue` computed with string types (crashes or wrong)
-- `profit = quantity * (unit_price - cost_price)` never computed
-- Groupby missing `month` dimension
-- Output missing 3 required aggregation columns
-
-The agent receives a `dict` input and must produce a correctly shaped, joined, grouped DataFrame.
-
-**Expected baseline score:** ~0.20–0.50
-
----
-
-## 🎁 Reward Function
-
-| Signal                  | Value                                |
-| ----------------------- | ------------------------------------ |
-| Base score              | `0.0 – 1.0` (weighted grader output) |
-| Improvement bonus       | `+0.3 × (new_score - previous_best)` |
-| Step penalty            | `−0.01` per step                     |
-| Solve bonus             | `+0.50` when score ≥ 0.95            |
-| Execution error penalty | `−0.05`                              |
-
-**Score breakdown weights:**
-
-- Schema match (correct columns): **25%**
-- Row count match: **15%**
-- Dtype match (numeric columns): **20%**
-- Value match (cell-level accuracy, 1% tolerance): **40%**
-
-Episode ends when score ≥ 0.95 (solved) or max steps reached.
-
----
-
-## 🚀 Setup & Usage
-
-### Local (without Docker)
-
+## 🐳 Docker Support
+A fully working `Dockerfile` is included.
 ```bash
-pip install openenv-core pandas numpy fastapi uvicorn openai
-
-# Run server for easy task
-TASK_ID=easy uvicorn pipeline_debugger_env.server.app:app --port 8000
-
-# Run inference baseline
-API_BASE_URL=https://api.openai.com/v1 \
-MODEL_NAME=gpt-4o-mini \
-HF_TOKEN=your_key \
-ENV_BASE_URL=http://localhost:8000 \
-python inference.py
+docker build -t pipeline-env .
+docker run -p 8000:8000 pipeline-env
 ```
 
-### With Docker
+## 🧠 Action & Observation Space
+*   **Type:** Text
+*   **Action Space:** Takes a Python string that strictly contains `def fix_pipeline(df):` and uses standard `pd` and `np` libraries to return a mutated DataFrame.
+*   **Observation Space:** Returns structured feedback `PipelineObservation`. If code execution fails, the agent receives the raw Python `traceback` in `last_action_result`. If it succeeds but is incorrect, the agent receives a fractional score breakdown explaining exactly what dimension failed (e.g. `Schema: 1.0, Values: 0.40`).
 
-```bash
-# Build
-docker build -f server/Dockerfile -t pipeline-debugger-env .
-
-# Run (easy task)
-docker run -p 8000:8000 -e TASK_ID=easy pipeline-debugger-env
-
-# Run (hard task)
-docker run -p 8000:8000 -e TASK_ID=hard pipeline-debugger-env
-```
-
-### Validate
-
-```bash
-openenv validate
-```
-
----
-
-## 📊 Baseline Scores
-
-Tested with `gpt-4o-mini`:
-
-| Task    | Score    |
-| ------- | -------- |
-| Easy    | 0.87     |
-| Medium  | 0.63     |
-| Hard    | 0.34     |
-| **Avg** | **0.61** |
-
----
-
-## 🔌 Client Usage
-
-```python
-import asyncio
-from pipeline_debugger_env import PipelineDebuggerEnv, PipelineAction
-
-async def main():
-    async with PipelineDebuggerEnv(base_url="http://localhost:8000") as env:
-        obs = await env.reset()
-        print(obs.task_description)
-
-        result = await env.step(PipelineAction(code="""
-import pandas as pd
-
-def fix_pipeline(df):
-    df = df.copy()
-    df['quantity'] = df['quantity'].astype(int)
-    df['unit_price'] = df['unit_price'].astype(float)
-    df['order_date'] = pd.to_datetime(df['order_date'])
-    df['discount_pct'] = df['discount_pct'].str.replace('%','').astype(float) / 100
-    df['total_price'] = df['quantity'] * df['unit_price'] * (1 - df['discount_pct'])
-    return df
-"""))
-        print(f"Score breakdown: {result.observation.score_breakdown}")
-
-asyncio.run(main())
-```
-
----
-
-## 📄 License
-
-BSD 3-Clause
+## ⚙️ Submission Details
+- **Code Quality:** Type hints and Pydantic models validate seamlessly against `openenv-core`.
+- **Global State Handling:** Employs a module-level dictionary to persist environment context gracefully across FastAPIs' distinct `/reset` and `/step` HTTP lifecycle.

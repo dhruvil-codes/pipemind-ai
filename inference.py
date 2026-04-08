@@ -2,37 +2,40 @@
 """
 inference.py — Baseline inference script for Data Pipeline Debugger (OpenEnv)
 
-Runs a language model against all 3 tasks and reports scores.
+Runs a language model against all 3 built-in tasks and reports scores.
 
 Environment variables required:
-    API_BASE_URL   — API endpoint for the LLM (OpenAI-compatible)
+    API_BASE_URL   — API endpoint (default: HuggingFace Router)
     MODEL_NAME     — Model identifier to use
-    HF_TOKEN       — Hugging Face / API key (used as bearer token)
+    HF_TOKEN       — Hugging Face token (used as bearer token for HF Router)
 
 Usage:
-    API_BASE_URL=https://api.openai.com/v1 \
-    MODEL_NAME=gpt-4o-mini \
-    HF_TOKEN=sk-... \
-    python inference.py
+    HF_TOKEN=hf_... uv run inference.py
 """
 
 import os
 import json
 import time
 import sys
-import requests
+from typing import List
+
+from dotenv import load_dotenv
+load_dotenv()
 from openai import OpenAI
 
 # ── Config ──────────────────────────────────────────────────────────────────
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
-MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME   = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-Coder-32B-Instruct")
+HF_TOKEN     = os.environ.get("HF_TOKEN", "")
 ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:8000")
 
-MAX_STEPS = 8
-MAX_TOKENS = 2048
-TEMPERATURE = 0.2
-TASKS = ["easy", "medium", "hard"]
+# Task configuration
+TASK_IDS      = ["easy", "medium", "hard"]
+MAX_STEPS     = 8
+MAX_TOKENS    = 2048
+TEMPERATURE   = 0.2
+BENCHMARK     = "pipeline-debugger-env"
+SUCCESS_SCORE = 0.95
 
 # ── OpenAI client ────────────────────────────────────────────────────────────
 client = OpenAI(
@@ -56,132 +59,145 @@ Study the broken code, understand each bug, and write a corrected version.
 """
 
 
-def build_user_prompt(observation: dict, step: int, history: list[str]) -> str:
-    lines = [
-        f"=== TASK: {observation['task_id'].upper()} | Step {step} ===",
-        "",
-        "TASK DESCRIPTION:",
-        observation["task_description"],
-        "",
-        "BROKEN CODE TO FIX:",
-        observation["broken_code"],
-        "",
-        "INPUT DATA SAMPLE (first records):",
-        observation["input_data"][:800],  # truncate for token limit
-        "",
-        "EXPECTED OUTPUT SAMPLE (first 3 rows):",
-        observation["expected_output_sample"],
-        "",
-    ]
-    if observation.get("last_action_result") and step > 1:
-        lines += [
-            "FEEDBACK FROM LAST ATTEMPT:",
-            observation["last_action_result"],
-            "",
-        ]
-    if observation.get("score_breakdown"):
-        lines += [
-            "SCORE BREAKDOWN:",
-            json.dumps(observation["score_breakdown"], indent=2),
-            "",
-        ]
+# ── Structured Logging (Hackathon format) ────────────────────────────────────
+def log_start(task: str, env: str, model: str):
+    print(f"[START] task={task} | env={env} | model={model}", flush=True)
+
+def log_step(step: int, action: str, reward: float, done: bool, error=None):
+    action_preview = action[:100].replace("\n", "\\n")
+    err_str = f" | error={error}" if error else ""
+    print(f"[STEP] step={step} | action={action_preview} | reward={reward:.4f} | done={done}{err_str}", flush=True)
+
+def log_end(success: bool, steps: int, score: float, rewards: List[float]):
+    print(f"[END] success={success} | steps={steps} | score={score:.4f} | rewards={rewards}", flush=True)
+
+
+# ── Prompt Construction ──────────────────────────────────────────────────────
+def build_user_prompt(observation: dict, step: int, history: list) -> str:
+    parts = []
+    parts.append(f"# Task\n{observation.get('task_description', 'Fix the pipeline')}")
+    parts.append(f"\n# Broken Code\n```python\n{observation.get('broken_code', '')}\n```")
+
+    input_data = observation.get("input_data", "")
+    if len(input_data) > 1500:
+        input_data = input_data[:1500] + "... (truncated)"
+    parts.append(f"\n# Input Data (JSON)\n{input_data}")
+    parts.append(f"\n# Expected Output Sample\n{observation.get('expected_output_sample', '')}")
+
+    if step > 1 and observation.get("last_action_result"):
+        parts.append(f"\n# Previous Result (Step {step-1})\n{observation.get('last_action_result', '')}")
+
     if history:
-        lines += ["HISTORY:", *history[-3:], ""]
-    lines.append("Submit your complete fixed fix_pipeline function now:")
-    return "\n".join(lines)
+        parts.append(f"\n# History\n" + "\n".join(history[-3:]))
+
+    parts.append(f"\n# Instructions\nReturn ONLY the Python code for fix_pipeline(). Step {step}/{MAX_STEPS}.")
+    return "\n".join(parts)
 
 
-def call_env(method: str, endpoint: str, payload: dict = None) -> dict:
+def get_model_response(prompt: str) -> str:
+    """Call the LLM and return generated code."""
+    try:
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=TEMPERATURE,
+            max_tokens=MAX_TOKENS,
+            stream=False,
+        )
+        text = (completion.choices[0].message.content or "").strip()
+        return text if text else "def fix_pipeline(df): return df"
+    except Exception as exc:
+        print(f"[DEBUG] Model request failed: {exc}", flush=True)
+        return "def fix_pipeline(df): return df"
+
+
+# ── Environment API calls ────────────────────────────────────────────────────
+import requests
+
+def call_env(method: str, endpoint: str, data: dict = None) -> dict:
+    """Call the environment server."""
     url = f"{ENV_BASE_URL}{endpoint}"
     try:
-        if method == "POST":
-            r = requests.post(url, json=payload or {}, timeout=30)
+        if method == "GET":
+            resp = requests.get(url, timeout=30)
         else:
-            r = requests.get(url, timeout=30)
-        r.raise_for_status()
-        return r.json()
+            resp = requests.post(url, json=data or {}, timeout=120)
+        resp.raise_for_status()
+        return resp.json()
     except Exception as e:
-        print(f"  [ENV ERROR] {method} {endpoint}: {e}")
+        print(f"[DEBUG] {method} {endpoint} failed: {e}", flush=True)
         return {}
 
 
+# ── Run single task ──────────────────────────────────────────────────────────
 def run_task(task_id: str) -> float:
     """Run one full episode for a task. Returns final score."""
-    print(f"\n{'='*60}")
-    print(f"  TASK: {task_id.upper()}")
-    print(f"{'='*60}")
+    log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
 
-    # Switch env to the desired task via query param (or env var handled server-side)
-    # We hit reset with task_id in body as extra param
+    # Reset environment with task_id
     reset_response = call_env("POST", "/reset", {"task_id": task_id})
     if not reset_response:
-        print("  Failed to reset environment.")
+        print(f"[DEBUG] Failed to reset environment for task {task_id}", flush=True)
+        log_end(success=False, steps=0, score=0.0, rewards=[])
         return 0.0
 
     observation = reset_response.get("observation", reset_response)
-    history = []
+    history: List[str] = []
+    rewards: List[float] = []
     final_score = 0.0
+    steps_taken = 0
 
     for step in range(1, MAX_STEPS + 1):
-        print(f"\n  Step {step}/{MAX_STEPS}")
-
+        # Build prompt and get model response
         user_prompt = build_user_prompt(observation, step, history)
+        code = get_model_response(user_prompt)
 
-        try:
-            completion = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=TEMPERATURE,
-                max_tokens=MAX_TOKENS,
-            )
-            code = completion.choices[0].message.content or ""
-        except Exception as e:
-            print(f"  [LLM ERROR] {e}")
-            code = "def fix_pipeline(df): return df"  # fallback no-op
-
-        # Clean up any accidental markdown fences
+        # Clean up markdown fences
         if "```" in code:
             lines = code.split("\n")
             lines = [l for l in lines if not l.strip().startswith("```")]
             code = "\n".join(lines)
 
-        print(f"  Submitting code ({len(code)} chars)...")
-
-        step_response = call_env("POST", "/step", {"code": code})
+        # Submit to environment
+        step_response = call_env("POST", "/step", {"action": {"code": code}})
         if not step_response:
-            print("  Empty step response.")
+            log_step(step=step, action=code, reward=0.0, done=True, error="Empty response from /step")
             break
 
         observation = step_response.get("observation", step_response)
-        reward = step_response.get("reward", 0.0)
-        done = step_response.get("done", False)
+        reward = observation.get("reward", step_response.get("reward", 0.0))
+        done = observation.get("done", step_response.get("done", False))
 
-        result_msg = observation.get("last_action_result", "")
-        score_breakdown = observation.get("score_breakdown") or {}
-        last_reward = observation.get("last_reward", reward)
+        rewards.append(reward)
+        steps_taken = step
 
         # Extract score from breakdown
+        score_breakdown = observation.get("score_breakdown") or {}
         if score_breakdown:
             w = {"schema_match": 0.25, "row_count_match": 0.15, "dtype_match": 0.20, "value_match": 0.40}
             final_score = sum(score_breakdown.get(k, 0) * v for k, v in w.items())
 
-        history.append(f"Step {step}: reward={last_reward:+.3f} | {result_msg[:80]}")
-        print(f"  Result: {result_msg[:100]}")
-        print(f"  Reward: {last_reward:+.3f} | Done: {done}")
+        result_msg = observation.get("last_action_result", "")
+        history.append(f"Step {step}: reward={reward:+.3f} | {result_msg[:80]}")
+
+        log_step(step=step, action=code, reward=reward, done=done)
 
         if done:
-            print(f"  Episode complete at step {step}.")
             break
 
-        time.sleep(0.5)  # be gentle on the server
+        time.sleep(0.5)
 
-    print(f"\n  Final score for {task_id}: {final_score:.4f}")
-    return final_score
+    score = max(0.0, min(final_score, 1.0))
+    success = score >= SUCCESS_SCORE
+    log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+
+    return score
 
 
+# ── Main ─────────────────────────────────────────────────────────────────────
 def main():
     print("=" * 60)
     print("  Data Pipeline Debugger — Baseline Inference")
@@ -197,24 +213,39 @@ def main():
         sys.exit(1)
 
     results = {}
-    for task_id in TASKS:
+    all_rewards = []
+
+    for task_id in TASK_IDS:
+        print(f"\n{'='*60}")
+        print(f"  TASK: {task_id.upper()}")
+        print(f"{'='*60}")
+
         score = run_task(task_id)
         results[task_id] = score
+        all_rewards.append(score)
         time.sleep(1)
 
-    print("\n" + "=" * 60)
+    # Print summary
+    print(f"\n{'='*60}")
     print("  BASELINE RESULTS SUMMARY")
-    print("=" * 60)
+    print(f"{'='*60}")
     for task_id, score in results.items():
         bar = "█" * int(score * 20) + "░" * (20 - int(score * 20))
-        print(f"  {task_id.upper():8s} [{bar}] {score:.4f}")
-    avg = sum(results.values()) / len(results)
+        status = "✅" if score >= SUCCESS_SCORE else "⚡"
+        print(f"  {status} {task_id:10s} [{bar}] {score:.4f}")
+
+    avg = sum(results.values()) / len(results) if results else 0.0
     print(f"\n  Average Score: {avg:.4f}")
-    print("=" * 60)
+    print(f"{'='*60}")
 
     # Save results
     with open("baseline_results.json", "w") as f:
-        json.dump({"model": MODEL_NAME, "scores": results, "average": avg}, f, indent=2)
+        json.dump({
+            "model": MODEL_NAME,
+            "benchmark": BENCHMARK,
+            "scores": results,
+            "average": avg,
+        }, f, indent=2)
     print("\n  Results saved to baseline_results.json")
 
 

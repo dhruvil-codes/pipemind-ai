@@ -1,4 +1,3 @@
-# server/pipeline_environment.py
 import uuid
 import json
 from typing import Optional
@@ -8,29 +7,51 @@ import pandas as pd
 from openenv.core.env_server import Environment
 from openenv.core.env_server.types import Action, Observation, State
 
-from pipeline_debugger_env.models import PipelineAction, PipelineObservation, PipelineState
-from pipeline_debugger_env.server.tasks import TASKS, grade_output, safe_execute_code
+from models import PipelineAction, PipelineObservation, PipelineState
+from server.tasks import TASKS, grade_output, safe_execute_code
+from server.upload_handler import GLOBAL_TASKS_CACHE
+
+
+# ─────────────────────────────────────────────────────────────────
+# MODULE-LEVEL GLOBAL STATE
+# OpenEnv's HTTP server creates a NEW environment instance for EVERY
+# /reset and /step request, then destroys it. This means we CANNOT
+# store state on `self`. We use this module-level dict instead.
+# ─────────────────────────────────────────────────────────────────
+_GLOBAL_STATE = {
+    "task_id": None,
+    "task": None,
+    "input_data": None,
+    "expected_df": None,
+    "step_count": 0,
+    "best_score": 0.0,
+    "cumulative_reward": 0.0,
+    "solved": False,
+}
+
+
+def _load_task(task_id: str):
+    """Load a task from built-in TASKS or GLOBAL_TASKS_CACHE."""
+    if task_id in TASKS:
+        return TASKS[task_id]
+    if task_id in GLOBAL_TASKS_CACHE:
+        return GLOBAL_TASKS_CACHE[task_id]
+    return None
 
 
 class PipelineDebuggerEnvironment(Environment[PipelineAction, PipelineObservation, PipelineState]):
     """
     Data Pipeline Debugger — OpenEnv Environment
 
-    The agent is given a broken pandas pipeline and must fix it by submitting
-    corrected Python code. Graders evaluate output DataFrame correctness and
-    return partial reward signals across schema, dtype, row, and value dimensions.
+    Supports 3 built-in tasks (easy/medium/hard) AND dynamically uploaded tasks.
+    Uses module-level global state to persist across OpenEnv's per-request env creation.
     """
 
     SUPPORTS_CONCURRENT_SESSIONS = False
 
     def __init__(self, task_id: str = "easy"):
         super().__init__()
-        assert task_id in TASKS, f"task_id must be one of {list(TASKS.keys())}"
         self._task_id = task_id
-        self._task = TASKS[task_id]
-        self._state = PipelineState(task_id=task_id)
-        self._input_data = None
-        self._expected_df: Optional[pd.DataFrame] = None
 
     def reset(
         self,
@@ -41,28 +62,37 @@ class PipelineDebuggerEnvironment(Environment[PipelineAction, PipelineObservatio
         """Initialize a fresh episode."""
         self._reset_rubric()
 
+        # Accept task_id from kwargs (sent by inference.py)
+        tid = kwargs.get("task_id", self._task_id)
+
+        task = _load_task(tid)
+        if not task:
+            raise ValueError(
+                f"Task '{tid}' not found. Available built-in: {list(TASKS.keys())}. "
+                f"Dynamic cache: {list(GLOBAL_TASKS_CACHE.keys())}"
+            )
+
+        # Initialize global state
+        input_data = task["get_input"]()
+        expected_df = task["get_expected"]()
+
+        _GLOBAL_STATE["task_id"] = tid
+        _GLOBAL_STATE["task"] = task
+        _GLOBAL_STATE["input_data"] = input_data
+        _GLOBAL_STATE["expected_df"] = expected_df
+        _GLOBAL_STATE["step_count"] = 0
+        _GLOBAL_STATE["best_score"] = 0.0
+        _GLOBAL_STATE["cumulative_reward"] = 0.0
+        _GLOBAL_STATE["solved"] = False
+
         eid = episode_id or str(uuid.uuid4())
-        self._state = PipelineState(
-            episode_id=eid,
-            task_id=self._task_id,
-            step_count=0,
-            best_score=0.0,
-            cumulative_reward=0.0,
-            solved=False,
-        )
-
-        self._input_data = self._task["get_input"]()
-        self._expected_df = self._task["get_expected"]()
-
-        input_str = self._serialize_input(self._input_data)
-        expected_sample = self._expected_df.head(3).to_json(orient="records", date_format="iso")
 
         return PipelineObservation(
-            task_id=self._task_id,
-            task_description=self._task["description"],
-            broken_code=self._task["broken_code"],
-            input_data=input_str,
-            expected_output_sample=expected_sample,
+            task_id=tid,
+            task_description=task["description"],
+            broken_code=task["broken_code"],
+            input_data=_serialize_input(input_data, task["input_is_dict"]),
+            expected_output_sample=expected_df.head(3).to_json(orient="records", date_format="iso"),
             last_action_result="Episode started. Submit your fixed fix_pipeline() code.",
             step_count=0,
             done=False,
@@ -77,45 +107,58 @@ class PipelineDebuggerEnvironment(Environment[PipelineAction, PipelineObservatio
         **kwargs,
     ) -> PipelineObservation:
         """Execute agent's code and return graded observation."""
-        self._state.step_count += 1
-        max_steps = self._task["max_steps"]
+        # Read state from global
+        task = _GLOBAL_STATE.get("task")
+        if not task:
+            raise ValueError("Environment not initialized. Call /reset first.")
 
+        tid = _GLOBAL_STATE["task_id"]
+        input_data = _GLOBAL_STATE["input_data"]
+        expected_df = _GLOBAL_STATE["expected_df"]
+
+        _GLOBAL_STATE["step_count"] += 1
+        step_count = _GLOBAL_STATE["step_count"]
+        max_steps = task["max_steps"]
+
+        # Execute the agent's code
         result_df, error_msg = safe_execute_code(
             action.code,
-            self._input_data,
-            self._task_id,
+            input_data,
+            tid,
         )
 
         if error_msg:
-            reward = -0.05
-            self._state.cumulative_reward += reward
-            done = self._state.step_count >= max_steps
+            reward = 0.0
+            _GLOBAL_STATE["cumulative_reward"] += reward
+            done = step_count >= max_steps
 
             return PipelineObservation(
-                task_id=self._task_id,
-                task_description=self._task["description"],
-                broken_code=self._task["broken_code"],
-                input_data=self._serialize_input(self._input_data),
-                expected_output_sample=self._expected_df.head(3).to_json(orient="records", date_format="iso"),
+                task_id=tid,
+                task_description=task["description"],
+                broken_code=task["broken_code"],
+                input_data=_serialize_input(input_data, task["input_is_dict"]),
+                expected_output_sample=expected_df.head(3).to_json(orient="records", date_format="iso"),
                 last_action_result=f"EXECUTION ERROR:\n{error_msg}",
-                step_count=self._state.step_count,
+                step_count=step_count,
                 done=done,
                 reward=reward,
                 score_breakdown=None,
             )
 
-        score, breakdown = grade_output(result_df, self._expected_df, self._task_id)
+        # Grade the output
+        score, breakdown = grade_output(result_df, expected_df, tid)
 
-        improvement = max(0.0, score - self._state.best_score)
+        improvement = max(0.0, score - _GLOBAL_STATE["best_score"])
         step_penalty = -0.01
         solve_bonus = 0.5 if score >= 0.95 else 0.0
         reward = round(score + improvement * 0.3 + step_penalty + solve_bonus, 4)
+        reward = max(0.0, min(reward, 1.0))  # clamp to [0, 1]
 
-        self._state.best_score = max(self._state.best_score, score)
-        self._state.cumulative_reward += reward
+        _GLOBAL_STATE["best_score"] = max(_GLOBAL_STATE["best_score"], score)
+        _GLOBAL_STATE["cumulative_reward"] += reward
         solved = score >= 0.95
-        self._state.solved = solved
-        done = solved or (self._state.step_count >= max_steps)
+        _GLOBAL_STATE["solved"] = solved
+        done = solved or (step_count >= max_steps)
 
         result_msg = (
             f"Score: {score:.4f} | "
@@ -130,13 +173,13 @@ class PipelineDebuggerEnvironment(Environment[PipelineAction, PipelineObservatio
             result_msg = f"Max steps reached. {result_msg}"
 
         return PipelineObservation(
-            task_id=self._task_id,
-            task_description=self._task["description"],
-            broken_code=self._task["broken_code"],
-            input_data=self._serialize_input(self._input_data),
-            expected_output_sample=self._expected_df.head(3).to_json(orient="records", date_format="iso"),
+            task_id=tid,
+            task_description=task["description"],
+            broken_code=task["broken_code"],
+            input_data=_serialize_input(input_data, task["input_is_dict"]),
+            expected_output_sample=expected_df.head(3).to_json(orient="records", date_format="iso"),
             last_action_result=result_msg,
-            step_count=self._state.step_count,
+            step_count=step_count,
             done=done,
             reward=reward,
             score_breakdown=breakdown,
@@ -144,15 +187,13 @@ class PipelineDebuggerEnvironment(Environment[PipelineAction, PipelineObservatio
 
     @property
     def state(self) -> PipelineState:
-        return self._state
-
-    def _serialize_input(self, input_data) -> str:
-        if self._task["input_is_dict"]:
-            return json.dumps({
-                k: v.to_json(orient="records", date_format="iso")
-                for k, v in input_data.items()
-            })
-        return input_data.to_json(orient="records", date_format="iso")
+        return PipelineState(
+            task_id=_GLOBAL_STATE.get("task_id", "easy"),
+            step_count=_GLOBAL_STATE.get("step_count", 0),
+            best_score=_GLOBAL_STATE.get("best_score", 0.0),
+            cumulative_reward=_GLOBAL_STATE.get("cumulative_reward", 0.0),
+            solved=_GLOBAL_STATE.get("solved", False),
+        )
 
     def get_metadata(self):
         from openenv.core.env_server.types import EnvironmentMetadata
@@ -165,3 +206,13 @@ class PipelineDebuggerEnvironment(Environment[PipelineAction, PipelineObservatio
             ),
             version="1.0.0",
         )
+
+
+def _serialize_input(input_data, is_dict: bool) -> str:
+    """Serialize input data to JSON string."""
+    if is_dict:
+        return json.dumps({
+            k: v.to_json(orient="records", date_format="iso")
+            for k, v in input_data.items()
+        })
+    return input_data.to_json(orient="records", date_format="iso")

@@ -1,0 +1,9 @@
+customer_id,transaction_amount,category,transaction_date,is_refund
+CUST-01,150.50,food,2024-01-01,0
+CUST-02,,electronics,2024-01-02,0
+CUST-03,45.20,,2024-01-03,-1
+CUST-04,10.00,clothing,2024-01-04,1
+CUST-05,999.99,food,2024-01-05,-1
+CUST-01,,electronics,2024-01-06,0
+CUST-02,19.99,,2024-01-07,0
+CUST-03,88.50,food,2024-01-08,1
