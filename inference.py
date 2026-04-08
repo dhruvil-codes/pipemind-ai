@@ -162,7 +162,7 @@ def run_task(task_id: str) -> float:
             code = "\n".join(lines)
 
         # Submit to environment
-        step_response = call_env("POST", "/step", {"action": {"code": code}})
+        step_response = call_env("POST", "/step", {"code": code})
         if not step_response:
             log_step(step=step, action=code, reward=0.0, done=True, error="Empty response from /step")
             break
