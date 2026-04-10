@@ -141,13 +141,13 @@ def run_task(task_id: str) -> float:
     reset_response = call_env("POST", "/reset", {"task_id": task_id})
     if not reset_response:
         print(f"[DEBUG] Failed to reset environment for task {task_id}", flush=True)
-        log_end(success=False, steps=0, score=0.0, rewards=[])
-        return 0.0
+        log_end(success=False, steps=0, score=0.001, rewards=[])
+        return 0.001
 
     observation = reset_response.get("observation", reset_response)
     history: List[str] = []
     rewards: List[float] = []
-    final_score = 0.0
+    final_score = 0.001
     steps_taken = 0
 
     for step in range(1, MAX_STEPS + 1):
@@ -190,7 +190,7 @@ def run_task(task_id: str) -> float:
 
         time.sleep(0.5)
 
-    score = max(0.0, min(final_score, 1.0))
+    score = max(0.001, min(final_score, 0.999))
     success = score >= SUCCESS_SCORE
     log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 

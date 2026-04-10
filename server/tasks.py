@@ -271,14 +271,16 @@ def grade_output(
 ) -> Tuple[float, Dict[str, float]]:
     """
     Grades result_df against expected_df.
-    Returns (total_score 0.0–1.0, breakdown dict).
+    Returns (total_score strictly in (0, 1), breakdown dict).
 
     Weights: schema 25%, row_count 15%, dtype 20%, value 40%
+    Evaluator requires scores strictly between 0 and 1 (not 0.0, not 1.0).
     """
+    EPSILON = 0.001  # Small value to avoid exact 0.0 or 1.0
     breakdown = {"schema_match": 0.0, "row_count_match": 0.0, "dtype_match": 0.0, "value_match": 0.0}
 
     if result_df is None or not isinstance(result_df, pd.DataFrame):
-        return 0.0, breakdown
+        return EPSILON, breakdown
 
     expected_cols = set(expected_df.columns)
     result_cols   = set(result_df.columns)
@@ -286,7 +288,7 @@ def grade_output(
     breakdown["schema_match"] = round(col_overlap, 4)
 
     if col_overlap == 0:
-        return 0.0, breakdown
+        return EPSILON, breakdown
 
     # Row count (within tolerance)
     exp_rows = len(expected_df)
@@ -305,6 +307,7 @@ def grade_output(
         breakdown["value_match"] = 0.0
         weights = {"schema_match": 0.25, "row_count_match": 0.15, "dtype_match": 0.20, "value_match": 0.40}
         total = round(min(sum(breakdown[k] * weights[k] for k in breakdown), 1.0), 4)
+        total = max(EPSILON, min(total, 1.0 - EPSILON))
         return total, breakdown
 
     exp = exp.iloc[:min_rows]
@@ -343,6 +346,8 @@ def grade_output(
 
     weights = {"schema_match": 0.25, "row_count_match": 0.15, "dtype_match": 0.20, "value_match": 0.40}
     total   = round(min(sum(breakdown[k] * weights[k] for k in breakdown), 1.0), 4)
+    # Clamp to strictly within (0, 1) — evaluator rejects exact 0.0 or 1.0
+    total = max(EPSILON, min(total, 1.0 - EPSILON))
     return total, breakdown
 
 

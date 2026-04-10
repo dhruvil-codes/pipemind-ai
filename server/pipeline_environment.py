@@ -128,7 +128,7 @@ class PipelineDebuggerEnvironment(Environment[PipelineAction, PipelineObservatio
         )
 
         if error_msg:
-            reward = 0.0
+            reward = 0.001
             _GLOBAL_STATE["cumulative_reward"] += reward
             done = step_count >= max_steps
 
@@ -152,7 +152,7 @@ class PipelineDebuggerEnvironment(Environment[PipelineAction, PipelineObservatio
         step_penalty = -0.01
         solve_bonus = 0.5 if score >= 0.95 else 0.0
         reward = round(score + improvement * 0.3 + step_penalty + solve_bonus, 4)
-        reward = max(0.0, min(reward, 1.0))  # clamp to [0, 1]
+        reward = max(0.001, min(reward, 0.999))  # clamp to (0, 1) exclusive
 
         _GLOBAL_STATE["best_score"] = max(_GLOBAL_STATE["best_score"], score)
         _GLOBAL_STATE["cumulative_reward"] += reward
