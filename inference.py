@@ -108,10 +108,44 @@ def get_model_response(prompt: str) -> str:
             stream=False,
         )
         text = (completion.choices[0].message.content or "").strip()
-        return text if text else "def fix_pipeline(df): return df"
+        return extract_code(text) if text else "def fix_pipeline(df): return df"
     except Exception as exc:
         print(f"[DEBUG] Model request failed: {exc}", flush=True)
         return "def fix_pipeline(df): return df"
+
+
+def extract_code(text: str) -> str:
+    """Extract Python code from LLM response, stripping explanations and markdown."""
+    import re
+    # Try to extract from ```python ... ``` blocks first
+    pattern = r'```(?:python)?\s*\n(.*?)```'
+    matches = re.findall(pattern, text, re.DOTALL)
+    if matches:
+        # Use the longest match (most likely the complete function)
+        code = max(matches, key=len).strip()
+        if 'def fix_pipeline' in code:
+            return code
+
+    # If no fenced block, try to find "def fix_pipeline" directly in text
+    if 'def fix_pipeline' in text:
+        lines = text.split('\n')
+        code_lines = []
+        in_function = False
+        for line in lines:
+            if line.strip().startswith('def fix_pipeline'):
+                in_function = True
+            if in_function:
+                # Stop if we hit a non-code line after the function body
+                if code_lines and line.strip() and not line.startswith(' ') and not line.startswith('\t') and not line.startswith('def ') and not line.startswith('import ') and not line.startswith('from '):
+                    break
+                code_lines.append(line)
+        if code_lines:
+            # Also grab any imports before the function
+            import_lines = [l for l in lines if l.strip().startswith(('import ', 'from ')) and lines.index(l) < lines.index(code_lines[0])]
+            return '\n'.join(import_lines + code_lines).strip()
+
+    # Fallback: return as-is (might still work)
+    return text
 
 
 # ── Environment API calls ────────────────────────────────────────────────────
@@ -161,8 +195,8 @@ def run_task(task_id: str) -> float:
             lines = [l for l in lines if not l.strip().startswith("```")]
             code = "\n".join(lines)
 
-        # Submit to environment
-        step_response = call_env("POST", "/step", {"code": code})
+        # Submit to environment (OpenEnv expects {"action": {"code": ...}})
+        step_response = call_env("POST", "/step", {"action": {"code": code}})
         if not step_response:
             log_step(step=step, action=code, reward=0.0, done=True, error="Empty response from /step")
             break
@@ -230,9 +264,9 @@ def main():
     print("  BASELINE RESULTS SUMMARY")
     print(f"{'='*60}")
     for task_id, score in results.items():
-        bar = "█" * int(score * 20) + "░" * (20 - int(score * 20))
-        status = "✅" if score >= SUCCESS_SCORE else "⚡"
-        print(f"  {status} {task_id:10s} [{bar}] {score:.4f}")
+        bar = "#" * int(score * 20) + "-" * (20 - int(score * 20))
+        status = "PASS" if score >= SUCCESS_SCORE else "FAIL"
+        print(f"  [{status}] {task_id:10s} [{bar}] {score:.4f}")
 
     avg = sum(results.values()) / len(results) if results else 0.0
     print(f"\n  Average Score: {avg:.4f}")

@@ -11,7 +11,7 @@ from typing import Optional
 import pandas as pd
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from openenv.core.env_server import create_fastapi_app
@@ -44,6 +44,26 @@ def make_env():
     return PipelineDebuggerEnvironment(task_id=TASK_ID)
 
 app = create_fastapi_app(make_env, PipelineAction, PipelineObservation)
+
+# ── Middleware to fix Hackathon spec payload ──
+@app.middleware("http")
+async def wrap_action_payload(request: Request, call_next):
+    # Hackathon evaluators send {"code": ...} directly to /step, 
+    # but OpenEnv pydantic expects {"action": {"code": ...}}. We intercept and wrap it here.
+    if request.url.path == "/step" and request.method == "POST":
+        body_bytes = await request.body()
+        if body_bytes:
+            try:
+                data = json.loads(body_bytes)
+                # If they sent {"code": ...} explicitly without "action"
+                if "code" in data and "action" not in data:
+                    new_body_bytes = json.dumps({"action": data}).encode("utf-8")
+                    async def receive():
+                        return {"type": "http.request", "body": new_body_bytes}
+                    request._receive = receive
+            except json.JSONDecodeError:
+                pass
+    return await call_next(request)
 
 # ── Static frontend ──
 if STATIC_DIR.exists():
